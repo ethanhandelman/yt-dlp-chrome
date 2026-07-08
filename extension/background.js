@@ -140,7 +140,7 @@ chrome.action.setBadgeBackgroundColor({ color: "#1db954" });
 
 // ---- One-shot commands ----
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
-  if (!msg || !["open", "reveal", "readText", "pickFolder"].includes(msg.type)) return;
+  if (!msg || !["open", "reveal", "readText", "pickFolder", "updateYtdlp"].includes(msg.type)) return;
   chrome.runtime.sendNativeMessage(HOST_NAME, msg, (response) => {
     if (chrome.runtime.lastError) {
       sendResponse({ ok: false, error: chrome.runtime.lastError.message || "Native host unavailable." });

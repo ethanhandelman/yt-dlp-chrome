@@ -38,6 +38,12 @@
       cursor: pointer;
     }
     #saved { margin-left: 12px; color: #137333; font-size: 13px; }
+    #update { margin-top: 10px; padding: 7px 14px; font-size: 13px; background: #5f6368; }
+    #update:disabled { opacity: 0.6; cursor: default; }
+    #updateStatus { margin-left: 12px; font-size: 13px; white-space: pre-wrap; }
+    #updateStatus.ok { color: #137333; }
+    #updateStatus.err { color: #c5221f; }
+    #updateStatus.run { color: #1a73e8; }
     code { background: rgba(127,127,127,0.15); padding: 1px 4px; border-radius: 3px; }
   </style>
 </head>
@@ -47,6 +53,11 @@
   <label for="ytdlpPath">Path to yt-dlp</label>
   <input type="text" id="ytdlpPath" placeholder="yt-dlp.exe or C:\tools\yt-dlp.exe" />
   <div class="hint">Full path to <code>yt-dlp.exe</code>, or just <code>yt-dlp.exe</code> if it is on your PATH.</div>
+  <div class="row">
+    <button id="update" type="button">Update yt-dlp</button>
+    <span id="updateStatus"></span>
+  </div>
+  <div class="hint">Runs <code>yt-dlp --update</code> at the path above to upgrade to the latest version.</div>
 
   <label for="outputDir">Output directory</label>
   <input type="text" id="outputDir" placeholder="%USERPROFILE%\Downloads" />

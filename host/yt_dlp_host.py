@@ -350,6 +350,23 @@ def handle_read_text(msg):
         return {"ok": False, "error": type(e).__name__ + ": " + str(e)}
 
 
+def handle_update(msg):
+    """Run `yt-dlp --update` to upgrade the binary in place."""
+    ytdlp = os.path.expandvars(msg.get("ytdlpPath") or "yt-dlp.exe")
+    try:
+        proc = run_proc([ytdlp, "--update"])
+        return {
+            "ok": True,
+            "returncode": proc.returncode,
+            "stdout": (proc.stdout or "")[-MAX_OUTPUT:],
+            "stderr": (proc.stderr or "")[-MAX_OUTPUT:],
+        }
+    except FileNotFoundError as e:
+        return {"ok": False, "error": "Executable not found: " + str(e)}
+    except Exception as e:
+        return {"ok": False, "error": type(e).__name__ + ": " + str(e)}
+
+
 def dispatch(msg):
     t = msg.get("type")
     if t == "pickFolder":
@@ -360,6 +377,8 @@ def dispatch(msg):
         send_message(handle_reveal(msg))
     elif t == "readText":
         send_message(handle_read_text(msg))
+    elif t == "updateYtdlp":
+        send_message(handle_update(msg))
     else:
         handle_download(msg)  # streams its own messages
 
