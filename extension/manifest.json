@@ -1,0 +1,27 @@
+{
+  "manifest_version": 3,
+  "name": "yt-dlp Downloader",
+  "version": "1.0.0",
+  "description": "One-click download of the current page's video with yt-dlp, using your browser cookies.",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAvU/x5L7A61gsi4MpG1acFzcJRGK5c8lygxXkEnesTBuPcNJu8eIYcfznj+FDO9dAsBkyOoK251a2QvEfkM4Oadt9FHSxXIlRUorkqOq6fGyKCJ1dpqpX9s2n8bImfeE+7ztqhTxeXyESjSseUdxpTsio58LmR5smxAmf+u4H/tWc0nwr40nruPHV0XAw77JHaMFMfjNyj2ElR4q5HYqz0dMXecGu3Fpg8z24uSPtZZEFCc4Ly0t2VyIKyu7dCD3ZZ2G59BwEBl4JhqewIaTxtF7havtUHk7puDbG5wBhQh71WKcDet+mFRGukpel5p4/fqMis5mK1DjmQlfXbR/QFQIDAQAB",
+  "permissions": ["cookies", "activeTab", "tabs", "nativeMessaging", "storage"],
+  "host_permissions": ["<all_urls>"],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_title": "Download with yt-dlp",
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "options_page": "options.html"
+}

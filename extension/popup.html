@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <style>
+    :root { color-scheme: light dark; }
+    body {
+      font-family: system-ui, -apple-system, Segoe UI, sans-serif;
+      width: 320px;
+      margin: 0;
+      padding: 14px;
+    }
+    h1 { font-size: 14px; margin: 0 0 4px; }
+    #url {
+      font-size: 11px;
+      color: #666;
+      word-break: break-all;
+      margin-bottom: 12px;
+      max-height: 32px;
+      overflow: hidden;
+    }
+    button {
+      width: 100%;
+      padding: 10px;
+      font-size: 14px;
+      font-weight: 600;
+      border: 0;
+      border-radius: 6px;
+      background: #cc0000;
+      color: #fff;
+      cursor: pointer;
+    }
+    button:disabled { opacity: 0.6; cursor: default; }
+    .field { margin-bottom: 10px; }
+    .field label.cap {
+      display: block;
+      font-size: 11px;
+      font-weight: 600;
+      color: #555;
+      margin-bottom: 4px;
+    }
+    .pathrow { display: flex; gap: 6px; }
+    .pathrow input {
+      flex: 1;
+      min-width: 0;
+      padding: 7px;
+      font-size: 12px;
+      border: 1px solid #bbb;
+      border-radius: 4px;
+      font-family: ui-monospace, Consolas, monospace;
+    }
+    .pathrow button {
+      width: auto;
+      flex: 0 0 auto;
+      padding: 7px 10px;
+      font-size: 12px;
+      background: #5f6368;
+    }
+    .checks { display: flex; gap: 16px; margin-bottom: 12px; }
+    .checks label {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      font-size: 13px;
+      cursor: pointer;
+    }
+    #progressWrap { margin-top: 10px; display: none; }
+    #progressWrap.show { display: block; }
+    .bar {
+      height: 8px;
+      border-radius: 4px;
+      background: rgba(127,127,127,0.25);
+      overflow: hidden;
+    }
+    .bar > div {
+      height: 100%;
+      width: 0%;
+      background: #1db954;
+      transition: width 0.2s ease;
+    }
+    #progressLabel { font-size: 11px; color: #666; margin-top: 4px; }
+    .recent { margin-top: 14px; }
+    .recent h2 {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: #888;
+      margin: 0 0 6px;
+    }
+    .recent h2 .clear-link {
+      float: right;
+      color: #1a73e8;
+      cursor: pointer;
+      text-transform: none;
+      letter-spacing: normal;
+      font-weight: 600;
+    }
+    .recent h2 .clear-link:hover { text-decoration: underline; }
+    .recent-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 5px 4px;
+      border-radius: 5px;
+    }
+    .recent-item:hover { background: rgba(127,127,127,0.12); }
+    .recent-item .icon {
+      flex: 0 0 auto;
+      font-size: 15px;
+      line-height: 1;
+      cursor: pointer;
+      user-select: none;
+    }
+    .recent-item .icon[draggable="true"] { cursor: grab; }
+    .recent-item .name {
+      flex: 1;
+      min-width: 0;
+      font-size: 12px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      cursor: pointer;
+    }
+    .recent-item .name:hover { text-decoration: underline; }
+    .recent-item .remove {
+      flex: 0 0 auto;
+      font-size: 14px;
+      line-height: 1;
+      color: #999;
+      cursor: pointer;
+      padding: 0 2px;
+      visibility: hidden;
+      user-select: none;
+    }
+    .recent-item:hover .remove { visibility: visible; }
+    .recent-item .remove:hover { color: #c5221f; }
+    .recent-empty { font-size: 12px; color: #999; }
+    #status {
+      margin-top: 12px;
+      font-size: 12px;
+      white-space: pre-wrap;
+      word-break: break-word;
+      max-height: 220px;
+      overflow: auto;
+    }
+    #status.ok { color: #137333; }
+    #status a.folder-link { color: #1a73e8; text-decoration: underline; cursor: pointer; }
+    #status.err { color: #c5221f; }
+    #status.run { color: #1a73e8; }
+    .links {
+      margin-top: 12px;
+      font-size: 11px;
+    }
+    .links a { color: #1a73e8; cursor: pointer; text-decoration: none; }
+    pre {
+      background: rgba(127,127,127,0.12);
+      padding: 6px;
+      border-radius: 4px;
+      font-size: 11px;
+      overflow-x: auto;
+    }
+  </style>
+</head>
+<body>
+  <h1>yt-dlp Downloader</h1>
+  <div id="url">Loading…</div>
+
+  <div class="field">
+    <label class="cap" for="path">Download to</label>
+    <div class="pathrow">
+      <input type="text" id="path" placeholder="C:\Users\you\Downloads" />
+      <button id="browse">Browse…</button>
+    </div>
+  </div>
+
+  <div class="checks">
+    <label><input type="checkbox" id="transcript" /> Transcript</label>
+    <label><input type="checkbox" id="newFolder" /> New Folder</label>
+  </div>
+
+  <button id="download">Download this video</button>
+
+  <div id="progressWrap">
+    <div class="bar"><div id="progressFill"></div></div>
+    <div id="progressLabel"></div>
+  </div>
+
+  <div id="status"></div>
+
+  <div class="recent">
+    <h2>Recent downloads <a id="clearRecent" class="clear-link" hidden>Clear</a></h2>
+    <div id="recentList"><div class="recent-empty">No downloads yet.</div></div>
+  </div>
+
+  <div class="links"><a id="opts">Settings</a></div>
+  <script src="popup.js"></script>
+</body>
+</html>

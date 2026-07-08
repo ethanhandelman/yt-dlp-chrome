@@ -1,0 +1,9 @@
+{
+  "name": "com.ytdlp.downloader",
+  "description": "yt-dlp Downloader native messaging host",
+  "path": "REPLACED_BY_INSTALL_PS1",
+  "type": "stdio",
+  "allowed_origins": [
+    "chrome-extension://dmaooopfmepihdanajgcadodnmhahgli/"
+  ]
+}
