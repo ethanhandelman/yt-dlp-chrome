@@ -75,10 +75,25 @@ All three settings **persist to the next download** until you change them.
 ### Progress
 
 While a download runs, the toolbar icon shows a **green ring** that fills with
-progress (blue while yt-dlp is merging/recoding), plus a **% badge**. A progress
-bar also appears in the popup. Progress is tracked by the background service
-worker, so it keeps going (and the icon keeps updating) **even if you close the
-popup** — reopen it to see the current state.
+progress (blue while yt-dlp is merging/recoding), plus a **% badge**. Progress is
+tracked by the background service worker, so it keeps going (and the icon keeps
+updating) **even if you close the popup** — reopen it to see the current state.
+
+### Queue & "In Progress"
+
+Downloads run **one at a time and queue** — trigger another download (e.g. from a
+different tab) while one is running and it lines up behind it. An **In progress**
+section appears in the popup (above Recent downloads) showing the current download
+with its progress bar plus anything **Queued** behind it. When one finishes, the
+next starts automatically.
+
+- **Hover a queued row → ×** removes it from the queue.
+- **Hover the running row → ×** stops that download (kills yt-dlp) and advances to
+  the next. (A partial `.part`/temp file may be left in the output folder.)
+
+The queue lives in memory only (download requests carry your cookies, so they are
+never written to disk); an active download keeps the worker alive, but if the
+browser is fully restarted any not-yet-started queued items are cleared.
 
 ### Recent downloads
 

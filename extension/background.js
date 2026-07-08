@@ -11,17 +11,21 @@ const MAX_RECENT = 5;
 const DEFAULT_ICON = { 16: "icons/icon16.png", 48: "icons/icon48.png", 128: "icons/icon128.png" };
 
 const uiPorts = new Set();
-let active = null;        // { percent, phase } while downloading, else null
+let jobs = [];            // [{ id, label, status:"downloading"|"queued", percent, phase, payload }]
 let nativePort = null;
+let runningId = null;     // id of the job currently downloading (null if idle)
+let jobSeq = 0;
 let baseBitmap = null;
 
 // ---- UI port (popup) ----
 chrome.runtime.onConnect.addListener((port) => {
   if (port.name !== "ui") return;
   uiPorts.add(port);
-  port.postMessage({ ev: "state", active });
+  port.postMessage({ ev: "state", jobs: snapshot() });
   port.onMessage.addListener((msg) => {
-    if (msg && msg.cmd === "start") startDownload(msg.payload);
+    if (!msg) return;
+    if (msg.cmd === "start") startDownload(msg.payload);
+    else if (msg.cmd === "cancel") cancel(msg.id);
   });
   port.onDisconnect.addListener(() => uiPorts.delete(port));
 });
@@ -32,52 +36,107 @@ function broadcast(message) {
   }
 }
 
-// ---- Download streaming ----
+// Public view of the queue — never expose payloads (they carry cookies).
+function snapshot() {
+  return jobs.map(({ id, label, status, percent, phase }) => ({ id, label, status, percent, phase }));
+}
+function broadcastQueue() {
+  broadcast({ ev: "queue", jobs: snapshot() });
+}
+
+// ---- Download queue ----
 function startDownload(payload) {
-  if (nativePort) return; // one at a time
-  active = { percent: 0, phase: "starting" };
-  broadcast({ ev: "progress", percent: 0, phase: "starting" });
+  jobs.push({
+    id: ++jobSeq,
+    label: payload.label || payload.url,
+    status: "queued",
+    percent: 0,
+    phase: "queued",
+    payload,
+  });
+  broadcastQueue();
+  pump();
+}
+
+// Start the next queued job if nothing is currently running.
+function pump() {
+  if (nativePort) return;
+  const job = jobs.find((j) => j.status !== "downloading");
+  if (!job) return;
+
+  job.status = "downloading";
+  job.phase = "starting";
+  job.percent = 0;
+  runningId = job.id;
+  broadcastQueue();
   drawRing(0, "starting");
+  chrome.action.setBadgeText({ text: "0%" });
 
   try {
     nativePort = chrome.runtime.connectNative(HOST_NAME);
   } catch (e) {
-    finishWithError("Native host unavailable. Did you run install.ps1?");
+    finishRunning({ ok: false, error: "Native host unavailable. Did you run install.ps1?" });
     return;
   }
 
-  let gotResult = false;
   nativePort.onMessage.addListener((msg) => {
     if (!msg) return;
     if (msg.kind === "progress") {
-      active = { percent: msg.percent, phase: msg.phase };
+      job.percent = msg.percent;
+      job.phase = msg.phase;
       drawRing(msg.percent, msg.phase);
       chrome.action.setBadgeText({ text: msg.percent + "%" });
-      broadcast({ ev: "progress", percent: msg.percent, phase: msg.phase });
+      broadcastQueue();
     } else if (msg.kind === "result") {
-      gotResult = true;
-      if (msg.ok && msg.videoPath) addRecent(msg);
-      broadcast({ ev: "done", result: msg });
-      resetIcon();
-      active = null;
-      if (nativePort) { try { nativePort.disconnect(); } catch (_e) {} }
-      nativePort = null;
+      finishRunning(msg);
     }
   });
 
+  // The host stays alive after a result (its read loop blocks), and Chrome does
+  // NOT fire onDisconnect when we call disconnect() ourselves — so onDisconnect
+  // means the host died unexpectedly. The runningId guard makes this a no-op if
+  // we already finished this job.
   nativePort.onDisconnect.addListener(() => {
     const err = chrome.runtime.lastError && chrome.runtime.lastError.message;
-    nativePort = null;
-    if (!gotResult) finishWithError(err || "Download host disconnected.");
+    if (runningId === job.id) {
+      finishRunning({ ok: false, error: err || "Download host disconnected." });
+    }
   });
 
-  nativePort.postMessage(payload);
+  nativePort.postMessage(job.payload);
 }
 
-function finishWithError(error) {
-  broadcast({ ev: "done", result: { ok: false, error } });
+// Finish the currently-running job. Idempotent via the runningId guard.
+// result: a download result to report (done event); null to finish silently
+// (used by cancel — no success/error message).
+function finishRunning(result) {
+  if (runningId === null) return;
+  const id = runningId;
+  runningId = null;
+  if (nativePort) { try { nativePort.disconnect(); } catch (_e) {} nativePort = null; }
+  removeJob(id);
   resetIcon();
-  active = null;
+  if (result) {
+    if (result.ok && result.videoPath) addRecent(result);
+    broadcast({ ev: "done", result });
+  }
+  broadcastQueue();
+  pump();
+}
+
+function removeJob(id) {
+  jobs = jobs.filter((j) => j.id !== id);
+}
+
+function cancel(id) {
+  const job = jobs.find((j) => j.id === id);
+  if (!job) return;
+  if (job.status === "downloading") {
+    finishRunning(null); // kill the host process, advance, no done message
+  } else {
+    removeJob(id);
+    broadcastQueue();
+  }
 }
 
 // ---- Recent list ----

@@ -22,9 +22,8 @@ const $transcript = document.getElementById("transcript");
 const $newFolder = document.getElementById("newFolder");
 const $btn = document.getElementById("download");
 const $status = document.getElementById("status");
-const $progressWrap = document.getElementById("progressWrap");
-const $progressFill = document.getElementById("progressFill");
-const $progressLabel = document.getElementById("progressLabel");
+const $inProgress = document.getElementById("inProgress");
+const $inProgressList = document.getElementById("inProgressList");
 const $recentList = document.getElementById("recentList");
 const $clearRecent = document.getElementById("clearRecent");
 $clearRecent.addEventListener("click", clearRecent);
@@ -47,13 +46,54 @@ function renderDoneOk(result) {
   $status.appendChild(a);
 }
 
-function showProgress(percent, phase) {
-  $progressWrap.classList.add("show");
-  $progressFill.style.width = Math.max(0, Math.min(100, percent)) + "%";
-  $progressLabel.textContent = (phase === "processing" ? "Processing… " : "Downloading… ") + percent + "%";
-}
-function hideProgress() {
-  $progressWrap.classList.remove("show");
+// ---- In Progress (queue) ----
+function renderQueue(list) {
+  const jobs = list || [];
+  $inProgress.hidden = jobs.length === 0;
+  $inProgressList.textContent = "";
+  for (const job of jobs) {
+    const row = document.createElement("div");
+    row.className = "job-item";
+
+    const body = document.createElement("div");
+    body.className = "jbody";
+
+    const label = document.createElement("div");
+    label.className = "jlabel";
+    label.textContent = job.label || "";
+    label.title = job.label || "";
+    body.appendChild(label);
+
+    if (job.status === "downloading") {
+      const bar = document.createElement("div");
+      bar.className = "bar";
+      const fill = document.createElement("div");
+      if (job.phase === "processing") fill.className = "processing";
+      fill.style.width = Math.max(0, Math.min(100, job.percent || 0)) + "%";
+      bar.appendChild(fill);
+      body.appendChild(bar);
+
+      const st = document.createElement("div");
+      st.className = "jstatus";
+      st.textContent = job.phase === "processing" ? "Processing…" : "Downloading " + (job.percent || 0) + "%";
+      body.appendChild(st);
+    } else {
+      const st = document.createElement("div");
+      st.className = "jstatus queued";
+      st.textContent = "Queued";
+      body.appendChild(st);
+    }
+    row.appendChild(body);
+
+    const remove = document.createElement("span");
+    remove.className = "remove";
+    remove.textContent = "×";
+    remove.title = job.status === "downloading" ? "Stop this download" : "Remove from queue";
+    remove.addEventListener("click", () => port.postMessage({ cmd: "cancel", id: job.id }));
+    row.appendChild(remove);
+
+    $inProgressList.appendChild(row);
+  }
 }
 
 // Convert a chrome.cookies.Cookie[] into Netscape cookies.txt text that yt-dlp reads.
@@ -182,17 +222,11 @@ function renderRecent(recent) {
 const port = chrome.runtime.connect({ name: "ui" });
 port.onMessage.addListener((msg) => {
   if (!msg) return;
-  if (msg.ev === "state") {
-    if (msg.active) showProgress(msg.active.percent, msg.active.phase);
-    chrome.storage.local.get({ recent: [] }).then((r) => renderRecent(r.recent));
-  } else if (msg.ev === "progress") {
-    showProgress(msg.percent, msg.phase);
-    $btn.disabled = true;
+  if (msg.ev === "state" || msg.ev === "queue") {
+    renderQueue(msg.jobs);
   } else if (msg.ev === "recent") {
     renderRecent(msg.recent);
   } else if (msg.ev === "done") {
-    hideProgress();
-    $btn.disabled = false;
     const r = msg.result || {};
     if (r.ok && r.returncode === 0) {
       renderDoneOk(r);
@@ -257,7 +291,7 @@ $browse.addEventListener("click", async () => {
 
 $btn.addEventListener("click", async () => {
   if (!currentTab) return;
-  $btn.disabled = true;
+  $btn.disabled = true; // briefly, to avoid double-firing while we gather cookies
   setStatus("Collecting cookies…", "run");
   try {
     await saveState();
@@ -265,13 +299,13 @@ $btn.addEventListener("click", async () => {
     const cookiesText = toNetscape(cookies);
     const opts = await getOptions();
     const state = currentState();
-    setStatus(`Starting yt-dlp (${cookies.length} cookies)…`, "run");
-    showProgress(0, "starting");
+    setStatus(`Queued (${cookies.length} cookies).`, "run");
 
     port.postMessage({
       cmd: "start",
       payload: {
         url: currentTab.url,
+        label: currentTab.title || currentTab.url,
         cookiesText,
         template: opts.template,
         ytdlpPath: opts.ytdlpPath,
@@ -283,6 +317,7 @@ $btn.addEventListener("click", async () => {
     });
   } catch (e) {
     setStatus("Error: " + (e && e.message ? e.message : String(e)), "err");
+  } finally {
     $btn.disabled = false;
   }
 });

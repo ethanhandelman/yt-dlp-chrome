@@ -64,13 +64,12 @@
       font-size: 13px;
       cursor: pointer;
     }
-    #progressWrap { margin-top: 10px; display: none; }
-    #progressWrap.show { display: block; }
     .bar {
-      height: 8px;
-      border-radius: 4px;
+      height: 6px;
+      border-radius: 3px;
       background: rgba(127,127,127,0.25);
       overflow: hidden;
+      margin-top: 3px;
     }
     .bar > div {
       height: 100%;
@@ -78,7 +77,45 @@
       background: #1db954;
       transition: width 0.2s ease;
     }
-    #progressLabel { font-size: 11px; color: #666; margin-top: 4px; }
+    .bar > div.processing { background: #1a73e8; }
+    #inProgress { margin-top: 14px; }
+    #inProgress[hidden] { display: none; }
+    .section-h2 {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: #888;
+      margin: 0 0 6px;
+    }
+    .job-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 5px 4px;
+      border-radius: 5px;
+    }
+    .job-item:hover { background: rgba(127,127,127,0.12); }
+    .job-item .jbody { flex: 1; min-width: 0; }
+    .job-item .jlabel {
+      font-size: 12px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .job-item .jstatus { font-size: 10px; color: #888; margin-top: 2px; }
+    .job-item .jstatus.queued { color: #b06000; }
+    .job-item .remove {
+      flex: 0 0 auto;
+      font-size: 14px;
+      line-height: 1;
+      color: #999;
+      cursor: pointer;
+      padding: 0 2px;
+      visibility: hidden;
+      user-select: none;
+    }
+    .job-item:hover .remove { visibility: visible; }
+    .job-item .remove:hover { color: #c5221f; }
     .recent { margin-top: 14px; }
     .recent h2 {
       font-size: 11px;
@@ -180,12 +217,12 @@
 
   <button id="download">Download this video</button>
 
-  <div id="progressWrap">
-    <div class="bar"><div id="progressFill"></div></div>
-    <div id="progressLabel"></div>
-  </div>
-
   <div id="status"></div>
+
+  <div id="inProgress" hidden>
+    <h2 class="section-h2">In progress</h2>
+    <div id="inProgressList"></div>
+  </div>
 
   <div class="recent">
     <h2>Recent downloads <a id="clearRecent" class="clear-link" hidden>Clear</a></h2>
