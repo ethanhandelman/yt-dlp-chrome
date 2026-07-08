@@ -148,6 +148,35 @@ counts, categories, tags, description, resolution/fps**, etc. Missing fields are
 omitted, so files for non-YouTube sites stay tidy. If metadata can't be fetched,
 the download still succeeds and the file keeps the universal fields.
 
+### Premiere project (New Folder only — experimental)
+
+Optionally, the host can drop a ready-to-open **`<title>.prproj`** into the folder
+with the video on a timeline and the transcript `.srt` imported into the project
+bin. Premiere has no headless/CLI project creation and almost no caption API, so
+this works by **rewriting a template project you create once** — and the captions
+land in the **bin** (one manual click to add as a caption track), not auto-attached.
+
+**One-time setup:**
+1. Make a folder, e.g. `C:\ytdlp-premiere-template\`, with two placeholder files
+   named exactly `__YTDLP_VIDEO__.mp4` (any short clip) and `__YTDLP_SUBS__.srt`
+   (any `.srt`).
+2. In **your** Premiere version: new project → import both → drag the video onto a
+   new **sequence** → leave the `.srt` in the bin → **Save As** `template.prproj`
+   in that folder.
+3. In the extension's **Settings**, set **Premiere template** to that
+   `template.prproj` path. (Blank = feature off; the popup checkbox is disabled.)
+
+**Per download:** check **Premiere** in the popup (it auto-enables New Folder). The
+host copies the template, decompresses its gzipped XML, swaps the placeholder media
+for your real files, recompresses, and writes `<title>.prproj`. Double-click it to
+open. Premiere auto-relinks the media by filename from the project folder.
+
+> ⚠️ **Experimental / brittle.** The `.prproj` format is undocumented and
+> version-specific — always create the template in the same Premiere version you
+> open with. If media shows offline on open, relink once from the folder. If the
+> template is missing or generation fails, the download still completes (the popup
+> notes it) — nothing else is affected.
+
 ## How cookies work
 
 On click, the extension reads cookies applicable to the **current tab's URL**

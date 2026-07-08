@@ -7,12 +7,14 @@ const OPTION_DEFAULTS = {
   ytdlpPath: "yt-dlp.exe",
   outputDir: "%USERPROFILE%\\Downloads",
   template: '"{ytdlp}" -N 16 --recode-video mp4 --cookies "{cookies}" -P "{output}" -f "bv*+ba/b" "{url}"',
+  premiereTemplate: "",
 };
 
 const STATE_DEFAULTS = {
   downloadPath: "",
   transcript: false,
   newFolder: false,
+  premiere: false,
 };
 
 const $url = document.getElementById("url");
@@ -20,6 +22,8 @@ const $path = document.getElementById("path");
 const $browse = document.getElementById("browse");
 const $transcript = document.getElementById("transcript");
 const $newFolder = document.getElementById("newFolder");
+const $premiere = document.getElementById("premiere");
+const $premiereLabel = document.getElementById("premiereLabel");
 const $btn = document.getElementById("download");
 const $status = document.getElementById("status");
 const $inProgress = document.getElementById("inProgress");
@@ -125,6 +129,7 @@ function currentState() {
     downloadPath: $path.value.trim(),
     transcript: $transcript.checked,
     newFolder: $newFolder.checked,
+    premiere: $premiere.checked,
   };
 }
 async function saveState() {
@@ -246,6 +251,15 @@ let currentTab = null;
   $path.value = state.downloadPath || opts.outputDir;
   $transcript.checked = !!state.transcript;
   $newFolder.checked = !!state.newFolder;
+  // The Premiere option only works when a template is configured in Settings.
+  if (opts.premiereTemplate) {
+    $premiere.checked = !!state.premiere;
+  } else {
+    $premiere.checked = false;
+    $premiere.disabled = true;
+    $premiereLabel.title = "Set a Premiere template in Settings to enable this.";
+    $premiereLabel.style.opacity = "0.5";
+  }
 
   const recent = (await chrome.storage.local.get({ recent: [] })).recent;
   renderRecent(recent);
@@ -266,6 +280,12 @@ $transcript.addEventListener("change", () => {
 });
 $newFolder.addEventListener("change", saveState);
 $path.addEventListener("change", saveState);
+
+// Premiere project needs a per-video folder, so enabling it enables New Folder.
+$premiere.addEventListener("change", () => {
+  if ($premiere.checked) $newFolder.checked = true;
+  saveState();
+});
 
 document.getElementById("opts").addEventListener("click", () => chrome.runtime.openOptionsPage());
 
@@ -313,6 +333,8 @@ $btn.addEventListener("click", async () => {
         transcript: state.transcript,
         newFolder: state.newFolder,
         transcriptLang: "en",
+        premiereProject: state.premiere,
+        premiereTemplate: opts.premiereTemplate || "",
       },
     });
   } catch (e) {

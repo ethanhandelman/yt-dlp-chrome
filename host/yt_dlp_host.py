@@ -25,11 +25,18 @@ import os
 import re
 import json
 import glob
+import gzip
 import struct
 import shlex
 import tempfile
 import subprocess
 from datetime import datetime
+
+# Sentinel filenames the user gives the placeholder media in their Premiere
+# template project; write_prproj swaps them for the real files. Keep in sync
+# with the README template instructions.
+PRPROJ_VIDEO_SENTINEL = "__YTDLP_VIDEO__.mp4"
+PRPROJ_SUBS_SENTINEL = "__YTDLP_SUBS__.srt"
 
 # Keep responses comfortably under Chrome's 1 MB host->extension message cap.
 MAX_OUTPUT = 12000
@@ -217,6 +224,51 @@ def write_metadata(base, stem, info, source_url, tab_title):
         return "Metadata: error (" + str(e) + ")"
 
 
+def write_prproj(base, stem, template_path, video_path, srt_path):
+    """Generate <stem>.prproj into base from the user's template project by
+    swapping the sentinel placeholder media for the real downloaded files.
+
+    The .prproj is gzipped XML; we decompress, string-replace the sentinel
+    filenames (and the template's placeholder directory, to reduce relink
+    prompts), then recompress. Premiere also auto-relinks by filename from the
+    project's own folder, so a filename match is enough even if a path form we
+    don't rewrite lingers. Returns a short status note; never raises."""
+    try:
+        if not template_path or not os.path.exists(template_path):
+            return "Premiere: template not found"
+        if not video_path:
+            return "Premiere: no video to reference"
+
+        with open(template_path, "rb") as f:
+            raw = f.read()
+        try:
+            xml = gzip.decompress(raw).decode("utf-8", "replace")
+            gzipped = True
+        except (OSError, EOFError):
+            xml = raw.decode("utf-8", "replace")  # allow an uncompressed template
+            gzipped = False
+
+        xml = xml.replace(PRPROJ_VIDEO_SENTINEL, os.path.basename(video_path))
+        if srt_path:
+            xml = xml.replace(PRPROJ_SUBS_SENTINEL, os.path.basename(srt_path))
+
+        # Point the placeholder directory at this video's folder (the user keeps
+        # the placeholder media alongside template.prproj).
+        tdir = os.path.dirname(os.path.abspath(template_path))
+        if tdir:
+            xml = xml.replace(tdir, base)
+
+        out_path = os.path.join(base, stem + ".prproj")
+        data = xml.encode("utf-8")
+        if gzipped:
+            data = gzip.compress(data)
+        with open(out_path, "wb") as f:
+            f.write(data)
+        return "Premiere: " + os.path.basename(out_path)
+    except Exception as e:
+        return "Premiere: error (" + type(e).__name__ + ": " + str(e) + ")"
+
+
 def max_stem_len(output, new_folder):
     """Longest filename stem that keeps the deepest output path under Windows'
     260-char MAX_PATH limit. With New Folder on, the stem appears twice (once as
@@ -390,6 +442,11 @@ def handle_download(msg):
                       "--convert-subs", "srt", "-o", sub_out, url])
             transcript_path, tnote = write_transcript(base, stem or "video")
             notes.append(tnote)
+
+        if new_folder and msg.get("premiereProject") and msg.get("premiereTemplate") and video_path:
+            notes.append(write_prproj(
+                base, stem, os.path.expandvars(msg.get("premiereTemplate")),
+                video_path, transcript_path))
 
         send_message({
             "kind": "result",

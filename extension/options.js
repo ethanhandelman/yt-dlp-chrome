@@ -4,9 +4,10 @@ const DEFAULTS = {
   ytdlpPath: "yt-dlp.exe",
   outputDir: "%USERPROFILE%\\Downloads",
   template: '"{ytdlp}" -N 16 --recode-video mp4 --cookies "{cookies}" -P "{output}" -f "bv*+ba/b" "{url}"',
+  premiereTemplate: "",
 };
 
-const fields = ["ytdlpPath", "outputDir", "template"];
+const fields = ["ytdlpPath", "outputDir", "template", "premiereTemplate"];
 
 async function load() {
   const stored = await chrome.storage.sync.get(DEFAULTS);

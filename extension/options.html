@@ -63,6 +63,15 @@
   <input type="text" id="outputDir" placeholder="%USERPROFILE%\Downloads" />
   <div class="hint">Where downloaded files are saved. Windows environment variables are expanded by the host.</div>
 
+  <label for="premiereTemplate">Premiere template (.prproj) <span style="font-weight:400;color:#888">— optional, experimental</span></label>
+  <input type="text" id="premiereTemplate" placeholder="C:\ytdlp-premiere-template\template.prproj" />
+  <div class="hint">
+    Enables the <strong>Premiere project</strong> checkbox in the popup. Point this at a
+    template project containing placeholder media named
+    <code>__YTDLP_VIDEO__.mp4</code> (on a sequence) and <code>__YTDLP_SUBS__.srt</code>
+    (in the bin). Leave blank to disable. See the README for setup.
+  </div>
+
   <label for="template">Command template</label>
   <textarea id="template"></textarea>
   <div class="hint">
