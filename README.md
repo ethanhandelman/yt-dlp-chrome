@@ -72,6 +72,30 @@ Right-click the toolbar icon → **Options** (or click **Settings** in the popup
 
 All three settings **persist to the next download** until you change them.
 
+### Trim (download only a section)
+
+Above **Download to** is a **Trim** row. Its two quick presets read the web
+player's current time:
+
+- **Start → current** — from the beginning up to where you are now.
+- **Current → end** — from where you are now to the end.
+
+Click the **Trim ▾** arrow to expand full controls: a **dual-handle slider**
+(defaults to the whole video, max read from the player), **timestamp boxes** on
+each side (type `1:05`, `2:03:10`, or seconds — they stay in sync with the
+slider), a **Use current** button under each box (fills from the player), a clip
+length readout, and **Reset**. Handles/boxes can't cross, so start is always
+before end.
+
+Downloading a section uses yt-dlp `--download-sections` (fast keyframe-snap cut —
+may start slightly before your exact point) and names the file with the range,
+e.g. `26-07-08 Title [1m03s-2m30s].mp4`. The full range = a normal full download.
+
+> Needs **ffmpeg** (already required for the mp4 recode). Reading the player works
+> on standard HTML5 players (YouTube, etc.); on DRM or cross-origin embedded
+> players the slider/current-time buttons are disabled — type timestamps manually.
+> The trim selection resets to the full video for each new download.
+
 ### Progress
 
 While a download runs, the toolbar icon shows a **green ring** that fills with

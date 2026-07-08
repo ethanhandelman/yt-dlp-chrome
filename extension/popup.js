@@ -32,6 +32,21 @@ const $recentList = document.getElementById("recentList");
 const $clearRecent = document.getElementById("clearRecent");
 $clearRecent.addEventListener("click", clearRecent);
 
+// Trim controls
+const $startToCurrent = document.getElementById("startToCurrent");
+const $currentToEnd = document.getElementById("currentToEnd");
+const $trimToggle = document.getElementById("trimToggle");
+const $trimPanel = document.getElementById("trimPanel");
+const $startTime = document.getElementById("startTime");
+const $endTime = document.getElementById("endTime");
+const $rngStart = document.getElementById("rngStart");
+const $rngEnd = document.getElementById("rngEnd");
+const $dualFill = document.getElementById("dualFill");
+const $startCur = document.getElementById("startCur");
+const $endCur = document.getElementById("endCur");
+const $clipLen = document.getElementById("clipLen");
+const $trimReset = document.getElementById("trimReset");
+
 function setStatus(text, cls) {
   $status.textContent = text;
   $status.className = cls || "";
@@ -223,6 +238,176 @@ function renderRecent(recent) {
   }
 }
 
+// ---- Trim / section selector ----
+// duration: null until known; start/end in seconds (end null = end of video).
+const trim = { duration: null, start: 0, end: null };
+
+function fmtTime(sec) {
+  if (sec == null || !isFinite(sec)) return "";
+  sec = Math.max(0, Math.round(sec));
+  const h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60), s = sec % 60;
+  const pad = (n) => String(n).padStart(2, "0");
+  return h ? `${h}:${pad(m)}:${pad(s)}` : `${m}:${pad(s)}`;
+}
+
+// Accept "SS", "M:SS", "H:MM:SS", or a decimal number of seconds.
+function parseTime(text) {
+  const t = (text || "").trim();
+  if (!t) return null;
+  if (/^\d+(\.\d+)?$/.test(t)) return parseFloat(t);
+  const parts = t.split(":");
+  if (parts.length > 3 || parts.some((p) => p !== "" && isNaN(Number(p)))) return null;
+  let sec = 0;
+  for (const p of parts) sec = sec * 60 + (p === "" ? 0 : Number(p));
+  return isFinite(sec) ? sec : null;
+}
+
+function sectionActive() {
+  const end = trim.end == null ? trim.duration : trim.end;
+  if (end == null) return false;                       // no upper bound known
+  if (!(end > trim.start)) return false;               // empty/invalid
+  const full = trim.start <= 0 && trim.duration != null && end >= trim.duration - 0.05;
+  return !full;
+}
+
+function applyTrim() {
+  const dur = trim.duration;
+  const knownDur = dur != null && isFinite(dur) && dur > 0;
+  const endVal = trim.end == null ? (knownDur ? dur : 0) : trim.end;
+
+  // Sliders (only meaningful with a known duration).
+  [$rngStart, $rngEnd].forEach((r) => (r.disabled = !knownDur));
+  if (knownDur) {
+    $rngStart.max = $rngEnd.max = dur;
+    $rngStart.value = trim.start;
+    $rngEnd.value = endVal;
+    const a = (trim.start / dur) * 100, b = (endVal / dur) * 100;
+    $dualFill.style.left = a + "%";
+    $dualFill.style.width = Math.max(0, b - a) + "%";
+  } else {
+    $dualFill.style.width = "0%";
+  }
+
+  // Text boxes (don't clobber a box the user is actively typing in).
+  if (document.activeElement !== $startTime) $startTime.value = fmtTime(trim.start);
+  if (document.activeElement !== $endTime) $endTime.value = trim.end == null ? (knownDur ? fmtTime(dur) : "") : fmtTime(trim.end);
+
+  // Current-time buttons need a detected video.
+  $startCur.disabled = $endCur.disabled = !videoDetected;
+  $currentToEnd.disabled = !knownDur || !videoDetected;  // needs both current + max
+  $startToCurrent.disabled = !videoDetected;
+
+  // Clip length readout.
+  $clipLen.textContent = sectionActive() ? "Clip: " + fmtTime(endVal - trim.start) : "Full video";
+}
+
+function setStart(sec) {
+  if (sec == null) return;
+  sec = Math.max(0, sec);
+  if (trim.duration != null) sec = Math.min(sec, trim.duration);
+  const upper = trim.end == null ? (trim.duration != null ? trim.duration : Infinity) : trim.end;
+  trim.start = Math.min(sec, upper);
+  applyTrim();
+}
+function setEnd(sec) {
+  if (sec == null) { trim.end = null; applyTrim(); return; }
+  sec = Math.max(0, sec);
+  if (trim.duration != null) sec = Math.min(sec, trim.duration);
+  trim.end = Math.max(sec, trim.start);
+  applyTrim();
+}
+
+let videoDetected = false;
+
+// Injected into the page to read the best <video>'s time/duration.
+function probeVideoInPage() {
+  const vids = Array.from(document.querySelectorAll("video"))
+    .filter((v) => isFinite(v.duration) && v.duration > 0);
+  if (!vids.length) return null;
+  const v = vids.sort((a, b) => b.duration - a.duration)[0];
+  return { duration: v.duration, currentTime: v.currentTime };
+}
+
+async function probeVideo() {
+  if (!currentTab) return null;
+  try {
+    const results = await chrome.scripting.executeScript({
+      target: { tabId: currentTab.id, allFrames: true },
+      func: probeVideoInPage,
+    });
+    const found = results.map((r) => r && r.result).filter(Boolean);
+    if (!found.length) return null;
+    return found.sort((a, b) => b.duration - a.duration)[0];
+  } catch (_e) {
+    return null;   // no host access to this page, DRM, etc.
+  }
+}
+
+function expandTrim(open) {
+  $trimPanel.hidden = !open;
+  $trimToggle.setAttribute("aria-expanded", open ? "true" : "false");
+}
+
+async function initTrim() {
+  applyTrim();  // render disabled/default state immediately
+  const v = await probeVideo();
+  if (v) {
+    videoDetected = true;
+    trim.duration = v.duration;
+    trim.start = 0;
+    trim.end = null; // == end of video
+  }
+  applyTrim();
+}
+
+// Slider handlers — clamp so the thumbs can't cross.
+$rngStart.addEventListener("input", () => setStart(Number($rngStart.value)));
+$rngEnd.addEventListener("input", () => setEnd(Number($rngEnd.value)));
+
+// Text handlers — parse on change/blur; revert to last valid on garbage.
+$startTime.addEventListener("change", () => {
+  const s = parseTime($startTime.value);
+  if (s == null) applyTrim(); else setStart(s);
+});
+$endTime.addEventListener("change", () => {
+  if (!$endTime.value.trim()) { setEnd(null); return; }
+  const e = parseTime($endTime.value);
+  if (e == null) applyTrim(); else setEnd(e);
+});
+
+// "Use current" under each box.
+$startCur.addEventListener("click", async () => {
+  const v = await probeVideo();
+  if (v) setStart(v.currentTime);
+});
+$endCur.addEventListener("click", async () => {
+  const v = await probeVideo();
+  if (v) setEnd(v.currentTime);
+});
+
+// Header quick presets (auto-expand the panel).
+$startToCurrent.addEventListener("click", async () => {
+  const v = await probeVideo();
+  if (!v) return;
+  trim.start = 0;
+  setEnd(v.currentTime);
+  expandTrim(true);
+});
+$currentToEnd.addEventListener("click", async () => {
+  const v = await probeVideo();
+  if (!v || trim.duration == null) return;
+  trim.end = trim.duration;
+  setStart(v.currentTime);
+  expandTrim(true);
+});
+
+$trimReset.addEventListener("click", () => {
+  trim.start = 0;
+  trim.end = null;
+  applyTrim();
+});
+$trimToggle.addEventListener("click", () => expandTrim($trimPanel.hidden));
+
 // ---- Service worker port (progress + state) ----
 const port = chrome.runtime.connect({ name: "ui" });
 port.onMessage.addListener((msg) => {
@@ -271,6 +456,7 @@ let currentTab = null;
     return;
   }
   $url.textContent = currentTab.url;
+  initTrim();
 })();
 
 // Checkbox coupling: enabling Transcript also enables New Folder (one-way).
@@ -321,22 +507,24 @@ $btn.addEventListener("click", async () => {
     const state = currentState();
     setStatus(`Queued (${cookies.length} cookies).`, "run");
 
-    port.postMessage({
-      cmd: "start",
-      payload: {
-        url: currentTab.url,
-        label: currentTab.title || currentTab.url,
-        cookiesText,
-        template: opts.template,
-        ytdlpPath: opts.ytdlpPath,
-        outputDir: state.downloadPath || opts.outputDir,
-        transcript: state.transcript,
-        newFolder: state.newFolder,
-        transcriptLang: "en",
-        premiereProject: state.premiere,
-        premiereTemplate: opts.premiereTemplate || "",
-      },
-    });
+    const payload = {
+      url: currentTab.url,
+      label: currentTab.title || currentTab.url,
+      cookiesText,
+      template: opts.template,
+      ytdlpPath: opts.ytdlpPath,
+      outputDir: state.downloadPath || opts.outputDir,
+      transcript: state.transcript,
+      newFolder: state.newFolder,
+      transcriptLang: "en",
+      premiereProject: state.premiere,
+      premiereTemplate: opts.premiereTemplate || "",
+    };
+    if (sectionActive()) {
+      payload.sectionStart = trim.start;
+      payload.sectionEnd = trim.end == null ? trim.duration : trim.end;
+    }
+    port.postMessage({ cmd: "start", payload });
   } catch (e) {
     setStatus("Error: " + (e && e.message ? e.message : String(e)), "err");
   } finally {

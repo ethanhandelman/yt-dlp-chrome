@@ -115,6 +115,20 @@ def fmt_ts(seconds):
     return ("%d:%02d:%02d" % (h, m, sec)) if h else ("%d:%02d" % (m, sec))
 
 
+def clip_label(start, end):
+    """Filesystem-safe clip range label, e.g. '[1m03s-2m30s]' / '[1h02m03s-...]'."""
+    def part(sec):
+        s = int(round(sec))
+        h, rem = divmod(s, 3600)
+        m, ss = divmod(rem, 60)
+        if h:
+            return "%dh%02dm%02ds" % (h, m, ss)
+        if m:
+            return "%dm%02ds" % (m, ss)
+        return "%ds" % ss
+    return "[%s-%s]" % (part(start), part(end))
+
+
 def fetch_info(ytdlp, cookie_path, url):
     """Fetch the full metadata for a URL as a dict (or None on failure).
     Works for any yt-dlp-supported site; fields vary by extractor."""
@@ -347,6 +361,11 @@ def handle_download(msg):
     transcript = bool(msg.get("transcript"))
     new_folder = bool(msg.get("newFolder"))
     lang = msg.get("transcriptLang") or "en"
+    section_start = msg.get("sectionStart")
+    section_end = msg.get("sectionEnd")
+    has_section = (isinstance(section_start, (int, float)) and
+                   isinstance(section_end, (int, float)) and
+                   section_end > section_start)
 
     if not url:
         send_message({"kind": "result", "ok": False, "error": "No URL provided."})
@@ -377,11 +396,14 @@ def handle_download(msg):
         if not raw_title:
             raw_title = fetch_stem(ytdlp, cookie_path, url) or "video"
 
-        # Cap the title for cleanliness, but never let date+title overflow
+        # Clips get a range suffix like " [1m03s-2m30s]" on the stem.
+        label = (" " + clip_label(section_start, section_end)) if has_section else ""
+
+        # Cap the title for cleanliness, but never let date+title(+label) overflow
         # Windows MAX_PATH (max_stem_len budgets the deepest resulting path).
-        cap = min(60, max_stem_len(output, new_folder) - len(date_prefix) - 1)
+        cap = min(60, max_stem_len(output, new_folder) - len(date_prefix) - len(label) - 1)
         title = raw_title[:max(1, cap)].strip(". ") or "video"
-        stem = date_prefix + " " + title
+        stem = date_prefix + " " + title + label
 
         base = os.path.join(output, stem) if new_folder else output
         os.makedirs(base, exist_ok=True)
@@ -396,6 +418,9 @@ def handle_download(msg):
         argv += ["--newline", "--color", "never",
                  "--progress-template", "DLPCT %(progress._percent_str)s",
                  "--print-to-file", "after_move:filepath", path_file]
+        if has_section:
+            # Fast keyframe-snap cut of just the selected range.
+            argv += ["--download-sections", "*%g-%g" % (section_start, section_end)]
 
         # Stream progress while yt-dlp runs.
         proc = subprocess.Popen(

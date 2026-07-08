@@ -56,6 +56,61 @@
       font-size: 12px;
       background: #5f6368;
     }
+    /* Trim / section selector */
+    .trim { margin-bottom: 10px; }
+    .trim-head { display: flex; align-items: center; gap: 8px; }
+    .trim-quick { display: flex; gap: 6px; flex: 1; }
+    .trim-quick button {
+      width: auto; flex: 0 0 auto; padding: 5px 8px; font-size: 11px;
+      font-weight: 600; background: #5f6368; color: #fff; border: 0;
+      border-radius: 4px; cursor: pointer;
+    }
+    .trim-quick button:disabled { opacity: 0.5; cursor: default; }
+    .trim-arrow {
+      width: auto; flex: 0 0 auto; padding: 5px 8px; font-size: 11px;
+      font-weight: 600; background: transparent; color: #1a73e8; border: 0;
+      cursor: pointer;
+    }
+    .trim-arrow .caret { display: inline-block; transition: transform 0.15s; }
+    .trim-arrow[aria-expanded="true"] .caret { transform: rotate(180deg); }
+    #trimPanel { margin-top: 10px; }
+    #trimPanel[hidden] { display: none; }
+    .trim-slider-row { display: flex; align-items: center; gap: 8px; }
+    .ts {
+      width: 62px; flex: 0 0 auto; padding: 5px; font-size: 12px; text-align: center;
+      border: 1px solid #bbb; border-radius: 4px;
+      font-family: ui-monospace, Consolas, monospace;
+    }
+    .ts:disabled { opacity: 0.6; }
+    /* Two-thumb slider: two range inputs overlaid on a shared track */
+    .dual { position: relative; flex: 1; height: 24px; }
+    .dual-track, .dual-fill {
+      position: absolute; top: 50%; transform: translateY(-50%);
+      height: 4px; border-radius: 2px;
+    }
+    .dual-track { left: 0; right: 0; background: rgba(127,127,127,0.3); }
+    .dual-fill { background: #1db954; }
+    .dual input[type="range"] {
+      position: absolute; top: 0; left: 0; width: 100%; height: 24px; margin: 0;
+      background: none; -webkit-appearance: none; appearance: none;
+      pointer-events: none; /* only thumbs are interactive */
+    }
+    .dual input[type="range"]::-webkit-slider-thumb {
+      -webkit-appearance: none; appearance: none; pointer-events: auto;
+      width: 14px; height: 14px; border-radius: 50%; background: #1db954;
+      border: 2px solid #fff; box-shadow: 0 0 2px rgba(0,0,0,0.5); cursor: grab;
+    }
+    .dual input[type="range"]:disabled::-webkit-slider-thumb { background: #9aa0a6; cursor: default; }
+    .trim-btn-row {
+      display: flex; align-items: center; gap: 8px; margin-top: 6px; font-size: 11px;
+    }
+    .trim-btn-row button {
+      width: auto; flex: 0 0 auto; padding: 4px 8px; font-size: 11px;
+      background: #5f6368; color: #fff; border: 0; border-radius: 4px; cursor: pointer;
+    }
+    .trim-btn-row button:disabled { opacity: 0.5; cursor: default; }
+    #clipLen { flex: 1; text-align: center; color: #666; }
+    #trimReset { margin-left: auto; background: transparent; color: #1a73e8; }
     .checks { display: flex; gap: 16px; margin-bottom: 12px; }
     .checks label {
       display: flex;
@@ -201,6 +256,34 @@
 <body>
   <h1>yt-dlp Downloader</h1>
   <div id="url">Loading…</div>
+
+  <div class="trim">
+    <div class="trim-head">
+      <div class="trim-quick">
+        <button id="startToCurrent" type="button" title="Set range from the beginning to the player's current time">Start → current</button>
+        <button id="currentToEnd" type="button" title="Set range from the player's current time to the end">Current → end</button>
+      </div>
+      <button id="trimToggle" type="button" class="trim-arrow" aria-expanded="false" title="Trim to a section">Trim <span class="caret">▾</span></button>
+    </div>
+    <div id="trimPanel" hidden>
+      <div class="trim-slider-row">
+        <input type="text" id="startTime" class="ts" inputmode="numeric" />
+        <div class="dual" id="dual">
+          <div class="dual-track"></div>
+          <div class="dual-fill" id="dualFill"></div>
+          <input type="range" id="rngStart" min="0" max="100" step="0.1" value="0" />
+          <input type="range" id="rngEnd" min="0" max="100" step="0.1" value="100" />
+        </div>
+        <input type="text" id="endTime" class="ts" inputmode="numeric" />
+      </div>
+      <div class="trim-btn-row">
+        <button id="startCur" type="button">Use current</button>
+        <span id="clipLen">Full video</span>
+        <button id="endCur" type="button">Use current</button>
+        <button id="trimReset" type="button">Reset</button>
+      </div>
+    </div>
+  </div>
 
   <div class="field">
     <label class="cap" for="path">Download to</label>
