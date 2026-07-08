@@ -175,25 +175,25 @@ the download still succeeds and the file keeps the universal fields.
 ### Premiere project (New Folder only — experimental)
 
 Optionally, the host can drop a ready-to-open **`<title>.prproj`** into the folder
-with the video on a timeline and the transcript `.srt` imported into the project
-bin. Premiere has no headless/CLI project creation and almost no caption API, so
-this works by **rewriting a template project you create once** — and the captions
-land in the **bin** (one manual click to add as a caption track), not auto-attached.
+with the video on a timeline. Premiere has no headless/CLI project creation, so
+this works by **rewriting a template project you create once**. The transcript is
+**not** wired into the project — Premiere embeds caption text at import, so a file
+swap can't update it; the cleaned `.srt` stays in the folder for you to **drag in
+manually**.
 
 **One-time setup:**
-1. Make a folder, e.g. `C:\ytdlp-premiere-template\`, with two placeholder files
-   named exactly `__YTDLP_VIDEO__.mp4` (any short clip) and `__YTDLP_SUBS__.srt`
-   (any `.srt`).
-2. In **your** Premiere version: new project → import both → drag the video onto a
-   new **sequence** → leave the `.srt` in the bin → **Save As** `template.prproj`
-   in that folder.
+1. Make a folder, e.g. `C:\ytdlp-premiere-template\`, with one placeholder file
+   named exactly `__YTDLP_VIDEO__.mp4` (any short clip).
+2. In **your** Premiere version: new project → import it → drag the video onto a
+   new **sequence** → **Save As** `template.prproj` in that folder.
 3. In the extension's **Settings**, set **Premiere template** to that
    `template.prproj` path. (Blank = feature off; the popup checkbox is disabled.)
 
 **Per download:** check **Premiere** in the popup (it auto-enables New Folder). The
-host copies the template, decompresses its gzipped XML, swaps the placeholder media
-for your real files, recompresses, and writes `<title>.prproj`. Double-click it to
-open. Premiere auto-relinks the media by filename from the project folder.
+host copies the template, decompresses its gzipped XML, swaps the placeholder video
+for your real file, recompresses, and writes `<title>.prproj`. Double-click it to
+open. Premiere auto-relinks the media by filename from the project folder. Drag the
+sidecar `.srt` in yourself if you want captions.
 
 > ⚠️ **Experimental / brittle.** The `.prproj` format is undocumented and
 > version-specific — always create the template in the same Premiere version you

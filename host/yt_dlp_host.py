@@ -32,11 +32,10 @@ import tempfile
 import subprocess
 from datetime import datetime
 
-# Sentinel filenames the user gives the placeholder media in their Premiere
-# template project; write_prproj swaps them for the real files. Keep in sync
+# Sentinel filename the user gives the placeholder video in their Premiere
+# template project; write_prproj swaps it for the real file. Keep in sync
 # with the README template instructions.
 PRPROJ_VIDEO_SENTINEL = "__YTDLP_VIDEO__.mp4"
-PRPROJ_SUBS_SENTINEL = "__YTDLP_SUBS__.srt"
 
 # Keep responses comfortably under Chrome's 1 MB host->extension message cap.
 MAX_OUTPUT = 12000
@@ -238,12 +237,16 @@ def write_metadata(base, stem, info, source_url, tab_title):
         return "Metadata: error (" + str(e) + ")"
 
 
-def write_prproj(base, stem, template_path, video_path, srt_path):
+def write_prproj(base, stem, template_path, video_path):
     """Generate <stem>.prproj into base from the user's template project by
-    swapping the sentinel placeholder media for the real downloaded files.
+    swapping the sentinel placeholder VIDEO for the real downloaded file.
+
+    Only the video is wired up — captions can't be updated by a file swap
+    (Premiere embeds caption text at import), so the transcript is left as a
+    sidecar .srt to drag in manually.
 
     The .prproj is gzipped XML; we decompress, string-replace the sentinel
-    filenames (and the template's placeholder directory, to reduce relink
+    filename (and the template's placeholder directory, to reduce relink
     prompts), then recompress. Premiere also auto-relinks by filename from the
     project's own folder, so a filename match is enough even if a path form we
     don't rewrite lingers. Returns a short status note; never raises."""
@@ -263,8 +266,6 @@ def write_prproj(base, stem, template_path, video_path, srt_path):
             gzipped = False
 
         xml = xml.replace(PRPROJ_VIDEO_SENTINEL, os.path.basename(video_path))
-        if srt_path:
-            xml = xml.replace(PRPROJ_SUBS_SENTINEL, os.path.basename(srt_path))
 
         # Point the placeholder directory at this video's folder (the user keeps
         # the placeholder media alongside template.prproj).
@@ -476,7 +477,7 @@ def handle_download(msg):
         if new_folder and msg.get("premiereProject") and msg.get("premiereTemplate") and video_path:
             notes.append(write_prproj(
                 base, stem, os.path.expandvars(msg.get("premiereTemplate")),
-                video_path, transcript_path))
+                video_path))
 
         send_message({
             "kind": "result",
