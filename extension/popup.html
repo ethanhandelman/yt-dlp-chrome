@@ -110,7 +110,11 @@
     }
     .trim-btn-row button:disabled { opacity: 0.5; cursor: default; }
     #clipLen { flex: 1; text-align: center; color: #666; }
-    #trimReset { margin-left: auto; background: transparent; color: #1a73e8; }
+    #trimReset {
+      flex: 0 0 auto; padding: 5px 8px; font-size: 11px; font-weight: 600;
+      background: transparent; color: #1a73e8; border: 0; cursor: pointer;
+    }
+    #trimReset[hidden] { display: none; }
     .checks { display: flex; gap: 16px; margin-bottom: 12px; }
     .checks label {
       display: flex;
@@ -263,6 +267,7 @@
         <button id="startToCurrent" type="button" title="Set range from the beginning to the player's current time">Start → current</button>
         <button id="currentToEnd" type="button" title="Set range from the player's current time to the end">Current → end</button>
       </div>
+      <button id="trimReset" type="button" hidden>Reset</button>
       <button id="trimToggle" type="button" class="trim-arrow" aria-expanded="false" title="Trim to a section">Trim <span class="caret">▾</span></button>
     </div>
     <div id="trimPanel" hidden>
@@ -277,10 +282,9 @@
         <input type="text" id="endTime" class="ts" inputmode="numeric" />
       </div>
       <div class="trim-btn-row">
-        <button id="startCur" type="button">Use current</button>
+        <button id="startCur" type="button">current</button>
         <span id="clipLen">Full video</span>
-        <button id="endCur" type="button">Use current</button>
-        <button id="trimReset" type="button">Reset</button>
+        <button id="endCur" type="button">current</button>
       </div>
     </div>
   </div>

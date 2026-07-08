@@ -241,6 +241,17 @@ function renderRecent(recent) {
 // ---- Trim / section selector ----
 // duration: null until known; start/end in seconds (end null = end of video).
 const trim = { duration: null, start: 0, end: null };
+const MIN_GAP = 1;            // clip must be at least 1s (handles can't meet)
+let trimKey = null;           // "<loadId>|<url>" — identifies this loaded video
+
+// Persist the current selection for this loaded page (survives popup re-open;
+// resets on refresh / different video via the key check). Session-scoped.
+function persistTrim() {
+  if (!trimKey || !currentTab) return;
+  chrome.storage.session.set({
+    ["trim:" + currentTab.id]: { key: trimKey, start: trim.start, end: trim.end },
+  });
+}
 
 function fmtTime(sec) {
   if (sec == null || !isFinite(sec)) return "";
@@ -299,21 +310,30 @@ function applyTrim() {
 
   // Clip length readout.
   $clipLen.textContent = sectionActive() ? "Clip: " + fmtTime(endVal - trim.start) : "Full video";
+
+  // Reset only when a real section is selected (lives in the header).
+  $trimReset.hidden = !sectionActive();
 }
 
 function setStart(sec) {
   if (sec == null) return;
   sec = Math.max(0, sec);
   if (trim.duration != null) sec = Math.min(sec, trim.duration);
-  const upper = trim.end == null ? (trim.duration != null ? trim.duration : Infinity) : trim.end;
-  trim.start = Math.min(sec, upper);
+  // Keep at least MIN_GAP before the end (or end of video if end is unset).
+  const effEnd = trim.end == null ? trim.duration : trim.end;
+  const upper = effEnd == null ? Infinity : effEnd - MIN_GAP;
+  trim.start = Math.max(0, Math.min(sec, upper));
+  persistTrim();
   applyTrim();
 }
 function setEnd(sec) {
-  if (sec == null) { trim.end = null; applyTrim(); return; }
+  if (sec == null) { trim.end = null; persistTrim(); applyTrim(); return; }
   sec = Math.max(0, sec);
   if (trim.duration != null) sec = Math.min(sec, trim.duration);
-  trim.end = Math.max(sec, trim.start);
+  // Keep at least MIN_GAP after the start.
+  trim.end = Math.max(sec, trim.start + MIN_GAP);
+  if (trim.duration != null) trim.end = Math.min(trim.end, trim.duration);
+  persistTrim();
   applyTrim();
 }
 
@@ -321,11 +341,13 @@ let videoDetected = false;
 
 // Injected into the page to read the best <video>'s time/duration.
 function probeVideoInPage() {
+  // Per-document token: stable across SPA navigation, regenerated on reload.
+  if (!window.__ytdlpLoadId) window.__ytdlpLoadId = String(Date.now()) + "-" + Math.random();
   const vids = Array.from(document.querySelectorAll("video"))
     .filter((v) => isFinite(v.duration) && v.duration > 0);
   if (!vids.length) return null;
   const v = vids.sort((a, b) => b.duration - a.duration)[0];
-  return { duration: v.duration, currentTime: v.currentTime };
+  return { duration: v.duration, currentTime: v.currentTime, url: location.href, loadId: window.__ytdlpLoadId };
 }
 
 async function probeVideo() {
@@ -354,8 +376,20 @@ async function initTrim() {
   if (v) {
     videoDetected = true;
     trim.duration = v.duration;
-    trim.start = 0;
-    trim.end = null; // == end of video
+    trimKey = (v.loadId || "") + "|" + (v.url || "");
+    // Restore a selection saved for this same loaded video (survives popup
+    // re-open). A refresh (new loadId) or different video (new url) won't match.
+    let restored = false;
+    try {
+      const store = await chrome.storage.session.get("trim:" + currentTab.id);
+      const saved = store["trim:" + currentTab.id];
+      if (saved && saved.key === trimKey) {
+        trim.start = Number(saved.start) || 0;
+        trim.end = saved.end == null ? null : Number(saved.end);
+        restored = true;
+      }
+    } catch (_e) { /* session storage unavailable */ }
+    if (!restored) { trim.start = 0; trim.end = null; }
   }
   applyTrim();
 }
@@ -404,6 +438,7 @@ $currentToEnd.addEventListener("click", async () => {
 $trimReset.addEventListener("click", () => {
   trim.start = 0;
   trim.end = null;
+  persistTrim();
   applyTrim();
 });
 $trimToggle.addEventListener("click", () => expandTrim($trimPanel.hidden));

@@ -296,11 +296,32 @@ def max_stem_len(output, new_folder):
     return max(10, ceiling - len(output) - 1 - suffix)
 
 
-def clean_srt(content):
+def srt_ts_to_sec(ts):
+    """'HH:MM:SS,mmm' (or with '.') -> seconds (float)."""
+    ts = ts.strip().replace(",", ".")
+    h, m, s = ts.split(":")
+    return int(h) * 3600 + int(m) * 60 + float(s)
+
+
+def sec_to_srt_ts(sec):
+    """seconds -> 'HH:MM:SS,mmm'."""
+    if sec < 0:
+        sec = 0
+    ms = int(round(sec * 1000))
+    h, ms = divmod(ms, 3600000)
+    m, ms = divmod(ms, 60000)
+    s, ms = divmod(ms, 1000)
+    return "%02d:%02d:%02d,%03d" % (h, m, s, ms)
+
+
+def clean_srt(content, clip_start=None, clip_end=None):
     """Clean an SRT: strip inline tags, collapse whitespace, drop consecutive
     cues whose text is identical (auto-captions repeat heavily), and renumber.
-    Keeps each cue's original timestamp range so it stays a valid, importable
-    SRT (e.g. for Premiere captions) while reading cleanly for an LLM."""
+
+    When clip_start/clip_end (seconds) are given, keep only cues overlapping that
+    window and re-base their timestamps to start at 0 — so a trimmed clip's
+    captions line up with the video (which starts at 0)."""
+    windowed = clip_start is not None and clip_end is not None
     cues = []
     last_text = None
     for block in re.split(r"\n\s*\n", content.strip()):
@@ -320,6 +341,19 @@ def clean_srt(content):
         text = " ".join(texts).strip()
         if not ts_line or not text or text == last_text:
             continue
+
+        if windowed:
+            try:
+                a, b = ts_line.split("-->")
+                cs, ce = srt_ts_to_sec(a), srt_ts_to_sec(b)
+            except (ValueError, IndexError):
+                continue
+            if ce <= clip_start or cs >= clip_end:   # fully outside the window
+                continue
+            ns = max(0.0, cs - clip_start)
+            ne = min(clip_end, ce) - clip_start
+            ts_line = sec_to_srt_ts(ns) + " --> " + sec_to_srt_ts(ne)
+
         last_text = text
         cues.append((ts_line, text))
     if not cues:
@@ -327,17 +361,19 @@ def clean_srt(content):
     return "\n".join("%d\n%s\n%s\n" % (i, ts, text) for i, (ts, text) in enumerate(cues, 1)) + "\n"
 
 
-def write_transcript(base, stem):
+def write_transcript(base, stem, clip_start=None, clip_end=None):
     """Clean the produced subtitle file(s) into a single cleaned SRT named
-    <stem>.srt. Returns (transcript_path_or_None, note)."""
-    produced = sorted(glob.glob(os.path.join(base, stem + "*.srt")))
+    <stem>.srt. When clip_start/clip_end are given, window + re-base the captions
+    to the clip. Returns (transcript_path_or_None, note)."""
+    # Escape base+stem: a clip's stem contains "[...]", which are glob wildcards.
+    produced = sorted(glob.glob(os.path.join(glob.escape(base), glob.escape(stem) + "*.srt")))
     if not produced:
         return None, "Transcript: none available"
     written = []
     for i, srt in enumerate(produced):
         try:
             with open(srt, "r", encoding="utf-8", errors="replace") as f:
-                cleaned = clean_srt(f.read())
+                cleaned = clean_srt(f.read(), clip_start, clip_end)
             if len(produced) == 1:
                 out_path = os.path.join(base, stem + ".srt")
             else:
@@ -420,8 +456,11 @@ def handle_download(msg):
                  "--progress-template", "DLPCT %(progress._percent_str)s",
                  "--print-to-file", "after_move:filepath", path_file]
         if has_section:
-            # Fast keyframe-snap cut of just the selected range.
             argv += ["--download-sections", "*%g-%g" % (section_start, section_end)]
+            if transcript:
+                # Frame-accurate cut so the clip starts exactly at section_start and
+                # the re-based captions line up; video-only clips stay fast.
+                argv += ["--force-keyframes-at-cuts"]
 
         # Stream progress while yt-dlp runs.
         proc = subprocess.Popen(
@@ -471,7 +510,9 @@ def handle_download(msg):
             run_proc([ytdlp, "--cookies", cookie_path, "--skip-download",
                       "--write-subs", "--write-auto-subs", "--sub-langs", lang,
                       "--convert-subs", "srt", "-o", sub_out, url])
-            transcript_path, tnote = write_transcript(base, stem or "video")
+            clip_s = section_start if has_section else None
+            clip_e = section_end if has_section else None
+            transcript_path, tnote = write_transcript(base, stem or "video", clip_s, clip_e)
             notes.append(tnote)
 
         if new_folder and msg.get("premiereProject") and msg.get("premiereTemplate") and video_path:
