@@ -100,6 +100,123 @@ def fetch_stem(ytdlp, cookie_path, url):
     return None
 
 
+def fmt_ts(seconds):
+    """Seconds -> 'H:MM:SS' (or 'M:SS' under an hour)."""
+    s = int(seconds)
+    h, rem = divmod(s, 3600)
+    m, sec = divmod(rem, 60)
+    return ("%d:%02d:%02d" % (h, m, sec)) if h else ("%d:%02d" % (m, sec))
+
+
+def fetch_info(ytdlp, cookie_path, url):
+    """Fetch the full metadata for a URL as a dict (or None on failure).
+    Works for any yt-dlp-supported site; fields vary by extractor."""
+    proc = run_proc([ytdlp, "--cookies", cookie_path, "--skip-download",
+                     "--no-warnings", "--dump-single-json", url])
+    if proc.returncode == 0 and proc.stdout:
+        try:
+            return json.loads(proc.stdout)
+        except (ValueError, TypeError):
+            return None
+    return None
+
+
+def curate_metadata(info, source_url, tab_title):
+    """Pick the useful fields from a yt-dlp info dict into a clean, ordered dict.
+    Universal fields are always present; extractor fields are included only when
+    available (so non-YouTube files stay tidy)."""
+    info = info or {}
+    meta = {
+        "source_url": source_url,
+        "tab_title": tab_title,
+        "downloaded_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+    }
+
+    upload_date = info.get("upload_date")  # yt-dlp format: YYYYMMDD
+    if isinstance(upload_date, str) and len(upload_date) == 8 and upload_date.isdigit():
+        upload_date = "%s-%s-%s" % (upload_date[0:4], upload_date[4:6], upload_date[6:8])
+
+    duration = info.get("duration")
+    duration = fmt_ts(duration) if isinstance(duration, (int, float)) else None
+
+    # (key in output, value) — appended only when the value is meaningful.
+    candidates = [
+        ("title", info.get("title")),
+        ("webpage_url", info.get("webpage_url")),
+        ("id", info.get("id")),
+        ("site", info.get("extractor_key")),
+        ("channel", info.get("channel") or info.get("uploader")),
+        ("channel_url", info.get("channel_url") or info.get("uploader_url")),
+        ("channel_id", info.get("channel_id") or info.get("uploader_id")),
+        ("upload_date", upload_date),
+        ("duration", duration),
+        ("view_count", info.get("view_count")),
+        ("like_count", info.get("like_count")),
+        ("comment_count", info.get("comment_count")),
+        ("categories", info.get("categories")),
+        ("tags", info.get("tags")),
+        ("resolution", info.get("resolution")),
+        ("fps", info.get("fps")),
+        ("description", info.get("description")),
+    ]
+    for key, value in candidates:
+        if value is None:
+            continue
+        if isinstance(value, (list, str)) and len(value) == 0:
+            continue
+        meta[key] = value
+    return meta
+
+
+def build_metadata_md(info, source_url, tab_title):
+    """A combined Markdown doc: readable summary on top, fenced JSON block below."""
+    meta = curate_metadata(info, source_url, tab_title)
+
+    def num(n):
+        return "{:,}".format(n) if isinstance(n, (int, float)) else str(n)
+
+    lines = ["# " + str(meta.get("title") or tab_title or "Untitled"), ""]
+    lines.append("- **Source:** " + str(meta.get("source_url", "")))
+    if meta.get("channel"):
+        ch = meta["channel"]
+        if meta.get("channel_url"):
+            ch += " (" + meta["channel_url"] + ")"
+        lines.append("- **Channel:** " + ch)
+    up = []
+    if meta.get("upload_date"):
+        up.append("**Uploaded:** " + meta["upload_date"])
+    if meta.get("duration"):
+        up.append("**Duration:** " + meta["duration"])
+    if up:
+        lines.append("- " + " · ".join(up))
+    stats = []
+    for label, key in (("Views", "view_count"), ("Likes", "like_count"), ("Comments", "comment_count")):
+        if meta.get(key) is not None:
+            stats.append("**%s:** %s" % (label, num(meta[key])))
+    if stats:
+        lines.append("- " + " · ".join(stats))
+    if meta.get("tags"):
+        lines.append("- **Tags:** " + ", ".join(str(t) for t in meta["tags"][:30]))
+    lines.append("- **Downloaded:** " + meta["downloaded_at"])
+
+    if meta.get("description"):
+        lines += ["", "## Description", "", str(meta["description"])]
+
+    lines += ["", "```json", json.dumps(meta, indent=2, ensure_ascii=False), "```", ""]
+    return "\n".join(lines)
+
+
+def write_metadata(base, stem, info, source_url, tab_title):
+    """Write <stem>.metadata.md into base. Returns a short status note."""
+    try:
+        path = os.path.join(base, stem + ".metadata.md")
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(build_metadata_md(info, source_url, tab_title))
+        return "Metadata: " + os.path.basename(path)
+    except OSError as e:
+        return "Metadata: error (" + str(e) + ")"
+
+
 def max_stem_len(output, new_folder):
     """Longest filename stem that keeps the deepest output path under Windows'
     260-char MAX_PATH limit. With New Folder on, the stem appears twice (once as
@@ -195,11 +312,18 @@ def handle_download(msg):
         # Name every download "<YY-MM-DD> <short title>" so files (and the
         # per-video folder) are tidy and sort chronologically in Explorer.
         date_prefix = datetime.now().strftime("%y-%m-%d")
-        title = fetch_stem(ytdlp, cookie_path, url) or "video"
+        tab_title = msg.get("label") or ""
+
+        # When New Folder is on we also write a metadata file, so fetch the full
+        # info once and reuse its title for the stem; otherwise just the title.
+        info = fetch_info(ytdlp, cookie_path, url) if new_folder else None
+        raw_title = (info.get("title") if info else None) or \
+            fetch_stem(ytdlp, cookie_path, url) or "video"
+
         # Cap the title for cleanliness, but never let date+title overflow
         # Windows MAX_PATH (max_stem_len budgets the deepest resulting path).
         cap = min(60, max_stem_len(output, new_folder) - len(date_prefix) - 1)
-        title = title[:max(1, cap)].strip(". ") or "video"
+        title = raw_title[:max(1, cap)].strip(". ") or "video"
         stem = date_prefix + " " + title
 
         base = os.path.join(output, stem) if new_folder else output
@@ -256,6 +380,7 @@ def handle_download(msg):
         notes = []
         if new_folder:
             notes.append("Folder: " + base)
+            notes.append(write_metadata(base, stem, info, url, tab_title))
 
         transcript_path = None
         if transcript:

@@ -133,6 +133,21 @@ reads cleanly for an LLM like Claude. If a video has no captions, the popup says
 > **Browse** requires Python's `tkinter` (included with standard CPython on
 > Windows). If it's missing, the popup says so — just type the path instead.
 
+### Metadata (New Folder only)
+
+When **New Folder** is on, the host also writes a `<title>.metadata.md` into the
+folder so the video is self-describing for AI ingestion/editing. It's one combined
+file: a human/LLM-readable summary on top, then a fenced ```json block with the
+same fields for programmatic use.
+
+Fields come from a single `yt-dlp --dump-single-json` call (which also supplies the
+filename title, so there's no extra step). Always included: **source URL, browser
+tab title, download time**. For YouTube and other supported sites it adds what the
+extractor provides — **title, channel, upload date, duration, view/like/comment
+counts, categories, tags, description, resolution/fps**, etc. Missing fields are
+omitted, so files for non-YouTube sites stay tidy. If metadata can't be fetched,
+the download still succeeds and the file keeps the universal fields.
+
 ## How cookies work
 
 On click, the extension reads cookies applicable to the **current tab's URL**
