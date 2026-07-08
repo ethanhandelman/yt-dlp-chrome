@@ -368,9 +368,14 @@ def handle_download(msg):
 
         # When New Folder is on we also write a metadata file, so fetch the full
         # info once and reuse its title for the stem; otherwise just the title.
+        # Always sanitize — a raw yt-dlp title can contain characters illegal in
+        # a Windows path (e.g. ":" "?" "*"), which would break os.makedirs.
         info = fetch_info(ytdlp, cookie_path, url) if new_folder else None
-        raw_title = (info.get("title") if info else None) or \
-            fetch_stem(ytdlp, cookie_path, url) or "video"
+        raw_title = None
+        if info and info.get("title"):
+            raw_title = sanitize_stem(info["title"])
+        if not raw_title:
+            raw_title = fetch_stem(ytdlp, cookie_path, url) or "video"
 
         # Cap the title for cleanliness, but never let date+title overflow
         # Windows MAX_PATH (max_stem_len budgets the deepest resulting path).
