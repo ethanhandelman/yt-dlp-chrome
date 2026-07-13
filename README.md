@@ -55,9 +55,15 @@ Right-click the toolbar icon → **Options** (or click **Settings** in the popup
 - **Output directory** — e.g. `%USERPROFILE%\Downloads`.
 - **Command template** — defaults to:
   ```
-  "{ytdlp}" -N 16 --recode-video mp4 --cookies "{cookies}" -P "{output}" -f "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best" "{url}"
+  "{ytdlp}" -N 16 --recode-video mp4 --cookies "{cookies}" -P "{output}" -f "bv*[height>1080][ext=webm]+ba/bv*[vcodec^=avc1]+ba[acodec^=mp4a]/bv*[ext=mp4]+ba[ext=m4a]/b[ext=mp4]/b" "{url}"
   ```
   Placeholders: `{ytdlp}` `{cookies}` `{output}` `{url}`.
+
+  The format selector keeps files Premiere-/Media-Player-compatible: at ≤1080p it
+  grabs the H.264/AAC stream directly (no re-encode, fast); when a higher-than-1080p
+  stream exists (1440p/4K, which YouTube serves only as VP9/AV1) it downloads that
+  and `--recode-video mp4` transcodes it to H.264 — so you never get an AV1 file
+  Premiere can't read.
 
 ## Usage
 

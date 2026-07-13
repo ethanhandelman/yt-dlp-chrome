@@ -402,7 +402,7 @@ def write_transcript(base, stem, clip_start=None, clip_end=None):
 
 
 def handle_download(msg):
-    template = msg.get("template") or '"{ytdlp}" -N 16 --recode-video mp4 --cookies "{cookies}" -P "{output}" -f "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best" "{url}"'
+    template = msg.get("template") or '"{ytdlp}" -N 16 --recode-video mp4 --cookies "{cookies}" -P "{output}" -f "bv*[height>1080][ext=webm]+ba/bv*[vcodec^=avc1]+ba[acodec^=mp4a]/bv*[ext=mp4]+ba[ext=m4a]/b[ext=mp4]/b" "{url}"'
     ytdlp = os.path.expandvars(msg.get("ytdlpPath") or "yt-dlp.exe")
     output = os.path.expandvars(msg.get("outputDir") or os.path.expanduser("~"))
     url = msg.get("url") or ""
