@@ -10,6 +10,8 @@ const HOST_NAME = "com.ytdlp.downloader";
 const MAX_RECENT = 5;
 const DEFAULT_ICON = { 16: "icons/icon16.png", 48: "icons/icon48.png", 128: "icons/icon128.png" };
 
+const QUEUE_KEY = "queue"; // chrome.storage.session slot for the persisted queue
+
 const uiPorts = new Set();
 let jobs = [];            // [{ id, label, status:"downloading"|"queued", percent, phase, payload }]
 let nativePort = null;
@@ -44,6 +46,47 @@ function broadcastQueue() {
   broadcast({ ev: "queue", jobs: snapshot() });
 }
 
+// Persist the queue so it survives a service-worker restart (MV3 workers are
+// killed after ~30s idle). Stored in storage.session — in memory, not exposed
+// to content scripts, and cleared when the browser closes — so payloads (which
+// carry cookies) never touch disk. Called on structural changes only, not on
+// every progress tick. Payloads are kept because they're needed to resume a job.
+function persistQueue() {
+  chrome.storage.session.set({ [QUEUE_KEY]: { jobs, jobSeq } }).catch(() => {});
+}
+
+// Restore the queue after the worker restarts. A job left "downloading" was
+// running when the worker died: its native port is gone and can't be reattached
+// (the orphaned host usually finishes writing the file on its own), so we drop
+// it with a notice rather than restart it — restarting would race the orphan
+// writing the same file. Remaining "queued" jobs resume normally.
+async function rehydrate() {
+  let saved;
+  try {
+    saved = (await chrome.storage.session.get(QUEUE_KEY))[QUEUE_KEY];
+  } catch (_e) { return; }
+  if (!saved || !Array.isArray(saved.jobs) || !saved.jobs.length) return;
+
+  jobs = saved.jobs;
+  jobSeq = saved.jobSeq || jobs.reduce((m, j) => Math.max(m, j.id), 0);
+  nativePort = null;
+  runningId = null;
+
+  const interrupted = jobs.find((j) => j.status === "downloading");
+  if (interrupted) {
+    jobs = jobs.filter((j) => j.id !== interrupted.id);
+    broadcast({
+      ev: "notice",
+      text: "A download was interrupted and may have finished in the background — check your folder. Resuming the queue…",
+    });
+  }
+
+  persistQueue();
+  broadcastQueue();
+  pump();
+}
+rehydrate();
+
 // ---- Download queue ----
 function startDownload(payload) {
   jobs.push({
@@ -55,6 +98,7 @@ function startDownload(payload) {
     payload,
   });
   broadcastQueue();
+  persistQueue();
   pump();
 }
 
@@ -69,6 +113,7 @@ function pump() {
   job.percent = 0;
   runningId = job.id;
   broadcastQueue();
+  persistQueue();
   drawRing(0, "starting");
   chrome.action.setBadgeText({ text: "0%" });
 
@@ -87,6 +132,10 @@ function pump() {
       drawRing(msg.percent, msg.phase);
       chrome.action.setBadgeText({ text: msg.percent + "%" });
       broadcastQueue();
+    } else if (msg.kind === "heartbeat") {
+      // Keepalive from the host during quiet stretches. Receiving it already
+      // reset the service-worker idle timer; redraw so the ring stays fresh.
+      drawRing(job.percent, job.phase);
     } else if (msg.kind === "result") {
       finishRunning(msg);
     }
@@ -121,6 +170,7 @@ function finishRunning(result) {
     broadcast({ ev: "done", result });
   }
   broadcastQueue();
+  persistQueue();
   pump();
 }
 
@@ -136,6 +186,7 @@ function cancel(id) {
   } else {
     removeJob(id);
     broadcastQueue();
+    persistQueue();
   }
 }
 

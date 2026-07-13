@@ -451,6 +451,8 @@ port.onMessage.addListener((msg) => {
     renderQueue(msg.jobs);
   } else if (msg.ev === "recent") {
     renderRecent(msg.recent);
+  } else if (msg.ev === "notice") {
+    setStatus(msg.text || "", "run");
   } else if (msg.ev === "done") {
     const r = msg.result || {};
     if (r.ok && r.returncode === 0) {

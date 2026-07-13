@@ -29,6 +29,7 @@ import gzip
 import struct
 import shlex
 import tempfile
+import threading
 import subprocess
 from datetime import datetime
 
@@ -42,6 +43,16 @@ MAX_OUTPUT = 12000
 MAX_TEXT = 200000  # cap for readText (transcript drag payload)
 
 CREATIONFLAGS = 0x08000000 if os.name == "nt" else 0  # CREATE_NO_WINDOW on Windows
+
+# A download can go quiet for minutes (metadata fetch, ffmpeg recode) with no
+# progress output. Chrome kills an idle MV3 service worker after ~30s, which
+# would orphan the download and drop the queue — so the host emits a heartbeat
+# on this interval to keep the port (and thus the worker) alive.
+HEARTBEAT_SECS = 15
+
+# send_message runs on both the main thread and the heartbeat thread; the 4-byte
+# length prefix and its payload must be written atomically or the stream corrupts.
+_send_lock = threading.Lock()
 
 PROGRESS_RE = re.compile(r"DLPCT\s+([\d.]+)%")
 PHASE_MARKERS = ("[Merger]", "[VideoConvertor]", "[ExtractAudio]", "[Fixup")
@@ -58,9 +69,10 @@ def read_message():
 
 def send_message(obj):
     data = json.dumps(obj).encode("utf-8")
-    sys.stdout.buffer.write(struct.pack("<I", len(data)))
-    sys.stdout.buffer.write(data)
-    sys.stdout.buffer.flush()
+    with _send_lock:
+        sys.stdout.buffer.write(struct.pack("<I", len(data)))
+        sys.stdout.buffer.write(data)
+        sys.stdout.buffer.flush()
 
 
 def run_proc(argv):
@@ -408,6 +420,17 @@ def handle_download(msg):
         send_message({"kind": "result", "ok": False, "error": "No URL provided."})
         return
 
+    # Keep the port alive across quiet stretches (metadata fetch, ffmpeg recode).
+    # Started before anything else so the very first network call is covered too.
+    stop_heartbeat = threading.Event()
+
+    def heartbeat():
+        while not stop_heartbeat.wait(HEARTBEAT_SECS):
+            send_message({"kind": "heartbeat"})
+
+    hb_thread = threading.Thread(target=heartbeat, daemon=True)
+    hb_thread.start()
+
     cookie_path = None
     path_file = None
     try:
@@ -537,6 +560,8 @@ def handle_download(msg):
     except Exception as e:
         send_message({"kind": "result", "ok": False, "error": type(e).__name__ + ": " + str(e)})
     finally:
+        stop_heartbeat.set()
+        hb_thread.join(timeout=1)
         for p in (cookie_path, path_file):
             if p and os.path.exists(p):
                 try:
