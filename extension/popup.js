@@ -249,7 +249,7 @@ let trimKey = null;           // "<loadId>|<url>" — identifies this loaded vid
 function persistTrim() {
   if (!trimKey || !currentTab) return;
   chrome.storage.session.set({
-    ["trim:" + currentTab.id]: { key: trimKey, start: trim.start, end: trim.end },
+    ["trim:" + currentTab.id]: { key: trimKey, start: trim.start, end: trim.end, expanded: !$trimPanel.hidden },
   });
 }
 
@@ -368,6 +368,7 @@ async function probeVideo() {
 function expandTrim(open) {
   $trimPanel.hidden = !open;
   $trimToggle.setAttribute("aria-expanded", open ? "true" : "false");
+  persistTrim();  // remember open/closed state for this page (no-op until trimKey set)
 }
 
 async function initTrim() {
@@ -380,16 +381,22 @@ async function initTrim() {
     // Restore a selection saved for this same loaded video (survives popup
     // re-open). A refresh (new loadId) or different video (new url) won't match.
     let restored = false;
+    let restoreExpanded = false;
     try {
       const store = await chrome.storage.session.get("trim:" + currentTab.id);
       const saved = store["trim:" + currentTab.id];
       if (saved && saved.key === trimKey) {
         trim.start = Number(saved.start) || 0;
         trim.end = saved.end == null ? null : Number(saved.end);
+        restoreExpanded = !!saved.expanded;
         restored = true;
       }
     } catch (_e) { /* session storage unavailable */ }
     if (!restored) { trim.start = 0; trim.end = null; }
+    applyTrim();
+    // Reopen the panel if it was open for this page last time.
+    if (restoreExpanded) expandTrim(true);
+    return;
   }
   applyTrim();
 }
