@@ -3,7 +3,7 @@
 const DEFAULTS = {
   ytdlpPath: "yt-dlp.exe",
   outputDir: "%USERPROFILE%\\Downloads",
-  template: '"{ytdlp}" -N 16 --recode-video mp4 --cookies "{cookies}" -P "{output}" -f "bv*+ba/b" "{url}"',
+  template: '"{ytdlp}" -N 16 --recode-video mp4 --cookies "{cookies}" -P "{output}" -f "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best" "{url}"',
   premiereTemplate: "",
 };
 

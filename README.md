@@ -55,7 +55,7 @@ Right-click the toolbar icon → **Options** (or click **Settings** in the popup
 - **Output directory** — e.g. `%USERPROFILE%\Downloads`.
 - **Command template** — defaults to:
   ```
-  "{ytdlp}" -N 16 --recode-video mp4 --cookies "{cookies}" -P "{output}" -f "bv*+ba/b" "{url}"
+  "{ytdlp}" -N 16 --recode-video mp4 --cookies "{cookies}" -P "{output}" -f "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best" "{url}"
   ```
   Placeholders: `{ytdlp}` `{cookies}` `{output}` `{url}`.
 
