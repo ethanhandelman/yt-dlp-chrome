@@ -79,6 +79,14 @@
     The command is tokenized (shell-style) and run without a shell, so quote paths containing spaces.
   </div>
 
+  <label for="claudePrompt">Claude launch prompt</label>
+  <textarea id="claudePrompt"></textarea>
+  <div class="hint">
+    Sent as the prompt when you use <strong>Download &rarr; Claude</strong>. It opens
+    Claude Code (Desktop app) in the video's folder; put a <code>CLAUDE.md</code> in
+    your Download-to folder for standing instructions. See the README.
+  </div>
+
   <div class="row">
     <button id="save">Save</button>
     <span id="saved"></span>

@@ -5,9 +5,10 @@ const DEFAULTS = {
   outputDir: "%USERPROFILE%\\Downloads",
   template: '"{ytdlp}" -N 16 --recode-video mp4 --cookies "{cookies}" -P "{output}" -f "bv*[height>1080][ext=webm]+ba/bv*[vcodec^=avc1]+ba[acodec^=mp4a]/bv*[ext=mp4]+ba[ext=m4a]/b[ext=mp4]/b" "{url}"',
   premiereTemplate: "",
+  claudePrompt: "A video was just downloaded into this folder by the yt-dlp downloader. Read the .metadata.md and .srt files here, then follow the CLAUDE.md in the parent folder: decide whether this is a Mode A (clip discovery) or Mode B (hook + on-screen caption) job using its mode-selection rules, or ask me first if it is genuinely unclear. Then begin.",
 };
 
-const fields = ["ytdlpPath", "outputDir", "template", "premiereTemplate"];
+const fields = ["ytdlpPath", "outputDir", "template", "premiereTemplate", "claudePrompt"];
 
 async function load() {
   const stored = await chrome.storage.sync.get(DEFAULTS);

@@ -31,6 +31,9 @@
       cursor: pointer;
     }
     button:disabled { opacity: 0.6; cursor: default; }
+    .dl-row { display: flex; gap: 6px; }
+    .dl-row button { width: auto; flex: 1; min-width: 0; }
+    #downloadClaude { background: #6b3fd4; font-size: 13px; }
     .field { margin-bottom: 10px; }
     .field label.cap {
       display: block;
@@ -303,7 +306,10 @@
     <label id="premiereLabel"><input type="checkbox" id="premiere" /> Premiere</label>
   </div>
 
-  <button id="download">Download this video</button>
+  <div class="dl-row">
+    <button id="download">Download this video</button>
+    <button id="downloadClaude" title="Download, then open Claude Code in the folder to find clips">Download → Claude</button>
+  </div>
 
   <div id="status"></div>
 

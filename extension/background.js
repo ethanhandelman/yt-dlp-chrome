@@ -26,7 +26,7 @@ chrome.runtime.onConnect.addListener((port) => {
   port.postMessage({ ev: "state", jobs: snapshot() });
   port.onMessage.addListener((msg) => {
     if (!msg) return;
-    if (msg.cmd === "start") startDownload(msg.payload);
+    if (msg.cmd === "start") startDownload(msg.payload, msg.opts);
     else if (msg.cmd === "cancel") cancel(msg.id);
   });
   port.onDisconnect.addListener(() => uiPorts.delete(port));
@@ -88,7 +88,8 @@ async function rehydrate() {
 rehydrate();
 
 // ---- Download queue ----
-function startDownload(payload) {
+function startDownload(payload, opts) {
+  opts = opts || {};
   jobs.push({
     id: ++jobSeq,
     label: payload.label || payload.url,
@@ -96,10 +97,22 @@ function startDownload(payload) {
     percent: 0,
     phase: "queued",
     payload,
+    sendToClaude: !!opts.sendToClaude,
+    claudePrompt: opts.claudePrompt || "",
   });
   broadcastQueue();
   persistQueue();
   pump();
+}
+
+// Launch Claude Code (Desktop app) on the finished download's folder so it reads
+// the .srt + .metadata.md and the CLAUDE.md in the parent (Download-to) folder.
+function launchClaudeCode(folder, prompt) {
+  const uri = "claude://code/new?folder=" + encodeURIComponent(folder) +
+    (prompt ? "&q=" + encodeURIComponent(prompt) : "");
+  chrome.runtime.sendNativeMessage(HOST_NAME, { type: "launchUri", uri }, () => {
+    void chrome.runtime.lastError; // best-effort; ignore
+  });
 }
 
 // Start the next queued job if nothing is currently running.
@@ -137,6 +150,9 @@ function pump() {
       // reset the service-worker idle timer; redraw so the ring stays fresh.
       drawRing(job.percent, job.phase);
     } else if (msg.kind === "result") {
+      if (job.sendToClaude && msg.ok && msg.folder) {
+        launchClaudeCode(msg.folder, job.claudePrompt);
+      }
       finishRunning(msg);
     }
   });

@@ -646,6 +646,24 @@ def handle_update(msg):
         return {"ok": False, "error": type(e).__name__ + ": " + str(e)}
 
 
+def handle_launch_uri(msg):
+    """Open a URI with the OS handler (e.g. a claude:// deep link). Unlike
+    handle_open, does NOT check os.path.exists — it's a protocol URL, not a file."""
+    uri = msg.get("uri") or ""
+    try:
+        if not uri:
+            return {"ok": False, "error": "No URI provided."}
+        if os.name == "nt":
+            os.startfile(uri)  # noqa: S606 — registered protocol handler
+        elif sys.platform == "darwin":
+            subprocess.Popen(["open", uri])
+        else:
+            subprocess.Popen(["xdg-open", uri])
+        return {"ok": True}
+    except Exception as e:
+        return {"ok": False, "error": type(e).__name__ + ": " + str(e)}
+
+
 def dispatch(msg):
     t = msg.get("type")
     if t == "pickFolder":
@@ -658,6 +676,8 @@ def dispatch(msg):
         send_message(handle_read_text(msg))
     elif t == "updateYtdlp":
         send_message(handle_update(msg))
+    elif t == "launchUri":
+        send_message(handle_launch_uri(msg))
     else:
         handle_download(msg)  # streams its own messages
 

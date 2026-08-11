@@ -8,6 +8,7 @@ const OPTION_DEFAULTS = {
   outputDir: "%USERPROFILE%\\Downloads",
   template: '"{ytdlp}" -N 16 --recode-video mp4 --cookies "{cookies}" -P "{output}" -f "bv*[height>1080][ext=webm]+ba/bv*[vcodec^=avc1]+ba[acodec^=mp4a]/bv*[ext=mp4]+ba[ext=m4a]/b[ext=mp4]/b" "{url}"',
   premiereTemplate: "",
+  claudePrompt: "A video was just downloaded into this folder by the yt-dlp downloader. Read the .metadata.md and .srt files here, then follow the CLAUDE.md in the parent folder: decide whether this is a Mode A (clip discovery) or Mode B (hook + on-screen caption) job using its mode-selection rules, or ask me first if it is genuinely unclear. Then begin.",
 };
 
 const STATE_DEFAULTS = {
@@ -25,6 +26,7 @@ const $newFolder = document.getElementById("newFolder");
 const $premiere = document.getElementById("premiere");
 const $premiereLabel = document.getElementById("premiereLabel");
 const $btn = document.getElementById("download");
+const $btnClaude = document.getElementById("downloadClaude");
 const $status = document.getElementById("status");
 const $inProgress = document.getElementById("inProgress");
 const $inProgressList = document.getElementById("inProgressList");
@@ -539,9 +541,10 @@ $browse.addEventListener("click", async () => {
   }
 });
 
-$btn.addEventListener("click", async () => {
+async function doDownload(toClaude) {
   if (!currentTab) return;
   $btn.disabled = true; // briefly, to avoid double-firing while we gather cookies
+  $btnClaude.disabled = true;
   setStatus("Collecting cookies…", "run");
   try {
     await saveState();
@@ -549,7 +552,7 @@ $btn.addEventListener("click", async () => {
     const cookiesText = toNetscape(cookies);
     const opts = await getOptions();
     const state = currentState();
-    setStatus(`Queued (${cookies.length} cookies).`, "run");
+    setStatus(toClaude ? `Queued → Claude (${cookies.length} cookies).` : `Queued (${cookies.length} cookies).`, "run");
 
     const payload = {
       url: currentTab.url,
@@ -558,8 +561,10 @@ $btn.addEventListener("click", async () => {
       template: opts.template,
       ytdlpPath: opts.ytdlpPath,
       outputDir: state.downloadPath || opts.outputDir,
-      transcript: state.transcript,
-      newFolder: state.newFolder,
+      // The Claude button needs a folder with the transcript + metadata, so it
+      // forces both on for this run without changing the saved checkboxes.
+      transcript: toClaude ? true : state.transcript,
+      newFolder: toClaude ? true : state.newFolder,
       transcriptLang: "en",
       premiereProject: state.premiere,
       premiereTemplate: opts.premiereTemplate || "",
@@ -568,10 +573,16 @@ $btn.addEventListener("click", async () => {
       payload.sectionStart = trim.start;
       payload.sectionEnd = trim.end == null ? trim.duration : trim.end;
     }
-    port.postMessage({ cmd: "start", payload });
+    const message = { cmd: "start", payload };
+    if (toClaude) message.opts = { sendToClaude: true, claudePrompt: opts.claudePrompt };
+    port.postMessage(message);
   } catch (e) {
     setStatus("Error: " + (e && e.message ? e.message : String(e)), "err");
   } finally {
     $btn.disabled = false;
+    $btnClaude.disabled = false;
   }
-});
+}
+
+$btn.addEventListener("click", () => doDownload(false));
+$btnClaude.addEventListener("click", () => doDownload(true));

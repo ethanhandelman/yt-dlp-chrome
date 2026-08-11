@@ -210,6 +210,27 @@ sidecar `.srt` in yourself if you want captions.
 > template is missing or generation fails, the download still completes (the popup
 > notes it) — nothing else is affected.
 
+### Download → Claude (open Claude Code on the folder)
+
+The **Download → Claude** button (next to Download) downloads the video **and forces
+Transcript + New Folder on**, then opens **Claude Code in the Claude Desktop app**
+pointed at the video's folder — so Claude immediately reads the `.srt` + `.metadata.md`
+(and can open the video) and starts working (e.g. finding clips).
+
+- Requires the **Claude Desktop app** installed (it handles the `claude://` link).
+  Without it, the download still completes; the link just does nothing.
+- Opening the folder shows a one-time **trust confirmation** in Claude Code.
+- The launch prompt is editable in **Settings → Claude launch prompt**.
+
+**Standing instructions via `CLAUDE.md`:** Claude Code loads every `CLAUDE.md` in the
+folders **above** where it opens. Because it opens inside each video's subfolder, a
+`CLAUDE.md` in your **Download-to folder** governs every video downloaded there. A
+ready-made template for social-clip finding is in
+[`docs/clip-finder-CLAUDE.md`](docs/clip-finder-CLAUDE.md) — copy it into your
+Download-to folder, rename it to `CLAUDE.md`, and adapt it. (It's written to match
+this tool's real filenames: `<YY-MM-DD> Title.srt` / `.metadata.md`, the ` [range]`
+suffix on trimmed clips, and the clip-relative transcript timebase.)
+
 ## How cookies work
 
 On click, the extension reads cookies applicable to the **current tab's URL**
