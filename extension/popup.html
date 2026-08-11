@@ -73,8 +73,9 @@
       padding: 8px; border-top: 1px solid rgba(127,127,127,0.3); font-size: 11px;
     }
     #tvSel { flex: 1; color: #666; }
-    #tvUse { width: auto; flex: 0 0 auto; padding: 6px 10px; font-size: 12px; background: #1db954; }
-    #tvUse:disabled { opacity: 0.5; cursor: default; }
+    .tv-foot button { width: auto; flex: 0 0 auto; padding: 6px 10px; font-size: 12px; background: #5f6368; }
+    .tv-foot button:disabled { opacity: 0.5; cursor: default; }
+    #tvUse { background: #1db954; }
     .field { margin-bottom: 10px; }
     .field label.cap {
       display: block;
@@ -379,6 +380,8 @@
     <div id="transcriptList"></div>
     <div class="tv-foot">
       <span id="tvSel">No selection</span>
+      <button id="tvCopy">Copy Transcript</button>
+      <button id="tvClear" disabled>Clear</button>
       <button id="tvUse" disabled>Use selection</button>
     </div>
   </div>

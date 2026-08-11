@@ -372,16 +372,34 @@ def sec_to_srt_ts(sec):
     return "%02d:%02d:%02d,%03d" % (h, m, s, ms)
 
 
+def strip_rolling_overlap(prev_raw, text):
+    """YouTube rolling auto-captions carry the previous line(s) into each cue
+    ("A B" -> "B C" -> "C D"). Return `text` minus the longest prefix that
+    repeats the end of `prev_raw`, cutting only on a word boundary. Empty result
+    means the cue was fully redundant."""
+    if not prev_raw:
+        return text
+    max_k = min(len(prev_raw), len(text))
+    for k in range(max_k, 0, -1):
+        # Boundary: the cut must not land mid-word in the current text.
+        if k < len(text) and text[k] != " ":
+            continue
+        if text[:k] == prev_raw[-k:]:
+            return text[k:].strip()
+    return text
+
+
 def clean_srt(content, clip_start=None, clip_end=None):
-    """Clean an SRT: strip inline tags, collapse whitespace, drop consecutive
-    cues whose text is identical (auto-captions repeat heavily), and renumber.
+    """Clean an SRT: strip inline tags, collapse whitespace, de-roll rolling
+    auto-captions (each cue keeps only its NEW text relative to the previous
+    cue), and renumber.
 
     When clip_start/clip_end (seconds) are given, keep only cues overlapping that
     window and re-base their timestamps to start at 0 — so a trimmed clip's
     captions line up with the video (which starts at 0)."""
     windowed = clip_start is not None and clip_end is not None
     cues = []
-    last_text = None
+    prev_raw = None   # full cleaned text of the previous kept cue
     for block in re.split(r"\n\s*\n", content.strip()):
         ts_line = None
         texts = []
@@ -397,7 +415,7 @@ def clean_srt(content, clip_start=None, clip_end=None):
             if s:
                 texts.append(s)
         text = " ".join(texts).strip()
-        if not ts_line or not text or text == last_text:
+        if not ts_line or not text:
             continue
 
         if windowed:
@@ -412,8 +430,11 @@ def clean_srt(content, clip_start=None, clip_end=None):
             ne = min(clip_end, ce) - clip_start
             ts_line = sec_to_srt_ts(ns) + " --> " + sec_to_srt_ts(ne)
 
-        last_text = text
-        cues.append((ts_line, text))
+        new_text = strip_rolling_overlap(prev_raw, text)
+        if not new_text:
+            continue   # fully redundant rolling repeat; keep prev_raw as-is
+        prev_raw = text  # the NEXT cue overlaps the full original, not the diff
+        cues.append((ts_line, new_text))
     if not cues:
         return ""
     return "\n".join("%d\n%s\n%s\n" % (i, ts, text) for i, (ts, text) in enumerate(cues, 1)) + "\n"

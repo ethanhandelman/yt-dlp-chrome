@@ -36,6 +36,8 @@ const $transcriptList = document.getElementById("transcriptList");
 const $tvStatus = document.getElementById("tvStatus");
 const $tvSel = document.getElementById("tvSel");
 const $tvUse = document.getElementById("tvUse");
+const $tvCopy = document.getElementById("tvCopy");
+const $tvClear = document.getElementById("tvClear");
 const $status = document.getElementById("status");
 const $inProgress = document.getElementById("inProgress");
 const $inProgressList = document.getElementById("inProgressList");
@@ -711,10 +713,10 @@ function renderCues(filter) {
     io.className = "io";
     const bi = document.createElement("button");
     bi.textContent = "in"; bi.title = "Set clip start here";
-    bi.addEventListener("click", (e) => { e.stopPropagation(); setStart(cue.start); afterSelect(); });
+    bi.addEventListener("click", (e) => { e.stopPropagation(); viewerSetIn(cue); });
     const bo = document.createElement("button");
     bo.textContent = "out"; bo.title = "Set clip end here";
-    bo.addEventListener("click", (e) => { e.stopPropagation(); setEnd(cue.end); afterSelect(); });
+    bo.addEventListener("click", (e) => { e.stopPropagation(); viewerSetOut(cue); });
     io.append(bi, bo);
 
     row.append(t, x, io);
@@ -723,12 +725,35 @@ function renderCues(filter) {
   }
 }
 
+// A new IN always takes effect: keep the out only if it's still after the new
+// in; otherwise clear the out (selection runs to end-of-video).
+function viewerSetIn(cue) {
+  trim.start = Math.max(0, cue.start);
+  if (trim.end != null && trim.end <= trim.start + MIN_GAP) trim.end = null;
+  persistTrim();
+  applyTrim();
+  afterSelect();
+}
+
+// Mirrored for OUT: keep the in only if it's still before the new out;
+// otherwise clear the in (selection runs from the start of the video).
+function viewerSetOut(cue) {
+  trim.end = Math.max(0, cue.end);
+  if (trim.duration != null) trim.end = Math.min(trim.end, trim.duration);
+  if (trim.start >= trim.end - MIN_GAP) trim.start = 0;
+  persistTrim();
+  applyTrim();
+  afterSelect();
+}
+
 function updateTvSelection() {
   const active = sectionActive();
   $tvSel.textContent = active
     ? "Selected " + fmtTime(trim.start) + " – " + fmtTime(trim.end == null ? trim.duration : trim.end)
     : "No selection";
   $tvUse.disabled = !active;
+  $tvClear.disabled = !active;
+  $tvCopy.textContent = active ? "Copy Selection" : "Copy Transcript";
 }
 
 function afterSelect() {
@@ -739,6 +764,31 @@ function afterSelect() {
 $tvSearch.addEventListener("input", () => renderCues($tvSearch.value));
 $tvClose.addEventListener("click", () => { $transcriptView.hidden = true; });
 $tvUse.addEventListener("click", () => { $transcriptView.hidden = true; expandTrim(true); });
+
+$tvClear.addEventListener("click", () => {
+  trim.start = 0;
+  trim.end = null;
+  persistTrim();
+  applyTrim();
+  afterSelect();
+});
+
+$tvCopy.addEventListener("click", async () => {
+  const active = sectionActive();
+  const inS = trim.start;
+  const outS = trim.end == null ? (trim.duration == null ? Infinity : trim.duration) : trim.end;
+  const cues = active
+    ? tvCues.filter((c) => c.end > inS + 0.01 && c.start < outS - 0.01)
+    : tvCues;
+  const text = cues.map((c) => "[" + fmtTime(c.start) + "] " + c.text).join("\n");
+  try {
+    await navigator.clipboard.writeText(text);
+    $tvCopy.textContent = "Copied ✓";
+    setTimeout(() => updateTvSelection(), 1200);
+  } catch (e) {
+    $tvStatus.textContent = "Copy failed: " + (e && e.message ? e.message : String(e));
+  }
+});
 document.addEventListener("keydown", (e) => {
   if (e.key === "Escape" && !$transcriptView.hidden) $transcriptView.hidden = true;
 });
