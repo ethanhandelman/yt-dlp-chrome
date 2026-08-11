@@ -28,10 +28,15 @@ import glob
 import gzip
 import struct
 import shlex
+import hashlib
 import tempfile
 import threading
 import subprocess
 from datetime import datetime
+
+# Hidden index in the "Download to" folder mapping a video id -> its workspace
+# folder, so every action for the same video reuses one folder.
+WORKSPACE_INDEX = ".ytdlp-workspaces.json"
 
 # Sentinel filename the user gives the placeholder video in their Premiere
 # template project; write_prproj swaps it for the real file. Keep in sync
@@ -124,6 +129,47 @@ def fmt_ts(seconds):
     h, rem = divmod(s, 3600)
     m, sec = divmod(rem, 60)
     return ("%d:%02d:%02d" % (h, m, sec)) if h else ("%d:%02d" % (m, sec))
+
+
+def resolve_workspace(output, video_id, workspace_stem):
+    """Return (base_dir, folder_name) for a video's single workspace folder,
+    reused across downloads/sessions keyed by video_id (so the full video, its
+    clips, transcript, and metadata all land in one folder). The id -> folder
+    map lives in a hidden index in `output`."""
+    index_path = os.path.join(output, WORKSPACE_INDEX)
+    reg = {}
+    try:
+        with open(index_path, "r", encoding="utf-8") as f:
+            reg = json.load(f)
+        if not isinstance(reg, dict):
+            reg = {}
+    except (OSError, ValueError):
+        reg = {}
+
+    folder = None
+    if video_id and isinstance(reg.get(video_id), str):
+        if os.path.isdir(os.path.join(output, reg[video_id])):
+            folder = reg[video_id]
+
+    if not folder:
+        folder = workspace_stem
+        taken = {v for v in reg.values() if isinstance(v, str)}
+        if folder in taken:  # different video wants the same name
+            i = 2
+            while ("%s (%d)" % (folder, i)) in taken:
+                i += 1
+            folder = "%s (%d)" % (folder, i)
+        if video_id:
+            reg[video_id] = folder
+            try:
+                with open(index_path, "w", encoding="utf-8") as f:
+                    json.dump(reg, f)
+            except OSError:
+                pass
+
+    base = os.path.join(output, folder)
+    os.makedirs(base, exist_ok=True)
+    return base, folder
 
 
 def clip_label(start, end):
@@ -377,8 +423,11 @@ def write_transcript(base, stem, clip_start=None, clip_end=None):
     """Clean the produced subtitle file(s) into a single cleaned SRT named
     <stem>.srt. When clip_start/clip_end are given, window + re-base the captions
     to the clip. Returns (transcript_path_or_None, note)."""
-    # Escape base+stem: a clip's stem contains "[...]", which are glob wildcards.
-    produced = sorted(glob.glob(os.path.join(glob.escape(base), glob.escape(stem) + "*.srt")))
+    # yt-dlp writes the fetched subs as "<stem>.<lang>.srt"; match exactly those
+    # (dot-delimited) so we don't pick up sibling files in a shared workspace,
+    # e.g. "<stem> [range].srt" or the cleaned "<stem>.srt". glob.escape handles
+    # the "[...]" in a clip stem, which are otherwise glob wildcards.
+    produced = sorted(glob.glob(os.path.join(glob.escape(base), glob.escape(stem) + ".*.srt")))
     if not produced:
         return None, "Transcript: none available"
     written = []
@@ -409,10 +458,15 @@ def handle_download(msg):
     cookies_text = msg.get("cookiesText") or ""
     transcript = bool(msg.get("transcript"))
     new_folder = bool(msg.get("newFolder"))
+    no_video = bool(msg.get("noVideo"))   # Transcript -> Claude: workspace prep only
+    if no_video:
+        new_folder = True
+        transcript = True
     lang = msg.get("transcriptLang") or "en"
     section_start = msg.get("sectionStart")
     section_end = msg.get("sectionEnd")
-    has_section = (isinstance(section_start, (int, float)) and
+    has_section = (not no_video and
+                   isinstance(section_start, (int, float)) and
                    isinstance(section_end, (int, float)) and
                    section_end > section_start)
 
@@ -456,91 +510,104 @@ def handle_download(msg):
         if not raw_title:
             raw_title = fetch_stem(ytdlp, cookie_path, url) or "video"
 
-        # Clips get a range suffix like " [1m03s-2m30s]" on the stem.
+        # Clips are FILES inside the workspace; the range goes on the file name,
+        # not the folder.
         label = (" " + clip_label(section_start, section_end)) if has_section else ""
 
-        # Cap the title for cleanliness, but never let date+title(+label) overflow
-        # Windows MAX_PATH (max_stem_len budgets the deepest resulting path).
+        # Cap the title so the deepest path stays under Windows MAX_PATH. The
+        # workspace stem appears twice (folder + file); subtracting the label here
+        # over-reserves slightly, which is safe.
         cap = min(60, max_stem_len(output, new_folder) - len(date_prefix) - len(label) - 1)
         title = raw_title[:max(1, cap)].strip(". ") or "video"
-        stem = date_prefix + " " + title + label
+        workspace_stem = date_prefix + " " + title
 
-        base = os.path.join(output, stem) if new_folder else output
-        os.makedirs(base, exist_ok=True)
+        if new_folder:
+            video_id = (info.get("id") if info else None) or \
+                ("url-" + hashlib.md5(url.encode("utf-8")).hexdigest()[:10])
+            base, workspace_stem = resolve_workspace(output, video_id, workspace_stem)
+        else:
+            base = output
+            os.makedirs(base, exist_ok=True)
 
-        fd2, path_file = tempfile.mkstemp(prefix="ytdlp_path_", suffix=".txt")
-        os.close(fd2)
+        # Workspace stem names the folder + the per-video files (metadata, full
+        # transcript); the clip's file stem adds the range label.
+        file_stem = workspace_stem + label
 
-        argv = build_argv(template, {
-            "ytdlp": ytdlp, "cookies": cookie_path, "output": base, "url": url,
-        })
-        argv += ["-o", stem + ".%(ext)s"]
-        argv += ["--newline", "--color", "never",
-                 "--progress-template", "DLPCT %(progress._percent_str)s",
-                 "--print-to-file", "after_move:filepath", path_file]
-        if has_section:
-            argv += ["--download-sections", "*%g-%g" % (section_start, section_end)]
-            if transcript:
-                # Frame-accurate cut so the clip starts exactly at section_start and
-                # the re-based captions line up; video-only clips stay fast.
-                argv += ["--force-keyframes-at-cuts"]
-
-        # Stream progress while yt-dlp runs.
-        proc = subprocess.Popen(
-            argv, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-            text=True, encoding="utf-8", errors="replace", bufsize=1,
-            creationflags=CREATIONFLAGS,
-        )
-        log_tail = []
-        last_sent = (-1, None)
-        for line in proc.stdout:
-            log_tail.append(line)
-            if len(log_tail) > 400:
-                del log_tail[:200]
-            m = PROGRESS_RE.search(line)
-            if m:
-                pct = int(float(m.group(1)))
-                if (pct, "download") != last_sent:
-                    last_sent = (pct, "download")
-                    send_message({"kind": "progress", "percent": pct, "phase": "download"})
-            elif any(mk in line for mk in PHASE_MARKERS):
-                if last_sent[1] != "processing":
-                    last_sent = (100, "processing")
-                    send_message({"kind": "progress", "percent": 100, "phase": "processing"})
-        returncode = proc.wait()
-
-        # Resolve the final media path.
         video_path = None
-        try:
-            with open(path_file, "r", encoding="utf-8", errors="replace") as f:
-                lines = [ln.strip() for ln in f if ln.strip()]
-            if lines:
-                video_path = lines[-1]
-        except OSError:
-            pass
+        returncode = 0
+        log_tail = []
+        if not no_video:
+            fd2, path_file = tempfile.mkstemp(prefix="ytdlp_path_", suffix=".txt")
+            os.close(fd2)
 
-        folder = os.path.dirname(video_path) if video_path else base
-        title = os.path.splitext(os.path.basename(video_path))[0] if video_path else (stem or "video")
+            argv = build_argv(template, {
+                "ytdlp": ytdlp, "cookies": cookie_path, "output": base, "url": url,
+            })
+            argv += ["-o", file_stem + ".%(ext)s"]
+            argv += ["--newline", "--color", "never",
+                     "--progress-template", "DLPCT %(progress._percent_str)s",
+                     "--print-to-file", "after_move:filepath", path_file]
+            if has_section:
+                argv += ["--download-sections", "*%g-%g" % (section_start, section_end)]
+                if transcript:
+                    # Frame-accurate cut so the clip starts exactly at section_start
+                    # and the re-based captions line up; video-only clips stay fast.
+                    argv += ["--force-keyframes-at-cuts"]
+
+            # Stream progress while yt-dlp runs.
+            proc = subprocess.Popen(
+                argv, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                text=True, encoding="utf-8", errors="replace", bufsize=1,
+                creationflags=CREATIONFLAGS,
+            )
+            last_sent = (-1, None)
+            for line in proc.stdout:
+                log_tail.append(line)
+                if len(log_tail) > 400:
+                    del log_tail[:200]
+                m = PROGRESS_RE.search(line)
+                if m:
+                    pct = int(float(m.group(1)))
+                    if (pct, "download") != last_sent:
+                        last_sent = (pct, "download")
+                        send_message({"kind": "progress", "percent": pct, "phase": "download"})
+                elif any(mk in line for mk in PHASE_MARKERS):
+                    if last_sent[1] != "processing":
+                        last_sent = (100, "processing")
+                        send_message({"kind": "progress", "percent": 100, "phase": "processing"})
+            returncode = proc.wait()
+
+            # Resolve the final media path.
+            try:
+                with open(path_file, "r", encoding="utf-8", errors="replace") as f:
+                    lines = [ln.strip() for ln in f if ln.strip()]
+                if lines:
+                    video_path = lines[-1]
+            except OSError:
+                pass
+
+        folder = base
+        title = os.path.splitext(os.path.basename(video_path))[0] if video_path else file_stem
 
         notes = []
         if new_folder:
             notes.append("Folder: " + base)
-            notes.append(write_metadata(base, stem, info, url, tab_title))
+            notes.append(write_metadata(base, workspace_stem, info, url, tab_title))
 
         transcript_path = None
         if transcript:
-            sub_out = os.path.join(base, (stem or "video") + ".%(ext)s")
+            sub_out = os.path.join(base, file_stem + ".%(ext)s")
             run_proc([ytdlp, "--cookies", cookie_path, "--skip-download",
                       "--write-subs", "--write-auto-subs", "--sub-langs", lang,
                       "--convert-subs", "srt", "-o", sub_out, url])
             clip_s = section_start if has_section else None
             clip_e = section_end if has_section else None
-            transcript_path, tnote = write_transcript(base, stem or "video", clip_s, clip_e)
+            transcript_path, tnote = write_transcript(base, file_stem, clip_s, clip_e)
             notes.append(tnote)
 
-        if new_folder and msg.get("premiereProject") and msg.get("premiereTemplate") and video_path:
+        if new_folder and not no_video and msg.get("premiereProject") and msg.get("premiereTemplate") and video_path:
             notes.append(write_prproj(
-                base, stem, os.path.expandvars(msg.get("premiereTemplate")),
+                base, file_stem, os.path.expandvars(msg.get("premiereTemplate")),
                 video_path))
 
         send_message({
@@ -664,10 +731,52 @@ def handle_launch_uri(msg):
         return {"ok": False, "error": type(e).__name__ + ": " + str(e)}
 
 
+def handle_fetch_transcript(msg):
+    """Fetch + clean the full transcript for a URL and return it as SRT text
+    (for the in-popup viewer). Nothing is written to the download folder."""
+    ytdlp = os.path.expandvars(msg.get("ytdlpPath") or "yt-dlp.exe")
+    url = msg.get("url") or ""
+    cookies_text = msg.get("cookiesText") or ""
+    lang = msg.get("transcriptLang") or "en"
+    if not url:
+        return {"ok": False, "error": "No URL provided."}
+    cookie_path = None
+    tmpdir = None
+    try:
+        fd, cookie_path = tempfile.mkstemp(prefix="ytdlp_cookies_", suffix=".txt")
+        with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as f:
+            f.write(cookies_text)
+        tmpdir = tempfile.mkdtemp(prefix="ytdlp_tx_")
+        run_proc([ytdlp, "--cookies", cookie_path, "--skip-download",
+                  "--write-subs", "--write-auto-subs", "--sub-langs", lang,
+                  "--convert-subs", "srt", "-o", os.path.join(tmpdir, "x.%(ext)s"), url])
+        produced = sorted(glob.glob(os.path.join(tmpdir, "x*.srt")))
+        if not produced:
+            return {"ok": False, "error": "No transcript available for this video."}
+        with open(produced[0], "r", encoding="utf-8", errors="replace") as f:
+            srt = clean_srt(f.read())
+        if not srt.strip():
+            return {"ok": False, "error": "Transcript was empty."}
+        return {"ok": True, "srt": srt[:MAX_TEXT]}
+    except Exception as e:
+        return {"ok": False, "error": type(e).__name__ + ": " + str(e)}
+    finally:
+        if cookie_path and os.path.exists(cookie_path):
+            try:
+                os.remove(cookie_path)
+            except OSError:
+                pass
+        if tmpdir:
+            import shutil
+            shutil.rmtree(tmpdir, ignore_errors=True)
+
+
 def dispatch(msg):
     t = msg.get("type")
     if t == "pickFolder":
         send_message(handle_pick_folder(msg))
+    elif t == "fetchTranscript":
+        send_message(handle_fetch_transcript(msg))
     elif t == "open":
         send_message(handle_open(msg))
     elif t == "reveal":

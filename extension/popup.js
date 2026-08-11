@@ -27,6 +27,15 @@ const $premiere = document.getElementById("premiere");
 const $premiereLabel = document.getElementById("premiereLabel");
 const $btn = document.getElementById("download");
 const $btnClaude = document.getElementById("downloadClaude");
+const $viewTranscript = document.getElementById("viewTranscript");
+const $transcriptClaude = document.getElementById("transcriptClaude");
+const $transcriptView = document.getElementById("transcriptView");
+const $tvSearch = document.getElementById("tvSearch");
+const $tvClose = document.getElementById("tvClose");
+const $transcriptList = document.getElementById("transcriptList");
+const $tvStatus = document.getElementById("tvStatus");
+const $tvSel = document.getElementById("tvSel");
+const $tvUse = document.getElementById("tvUse");
 const $status = document.getElementById("status");
 const $inProgress = document.getElementById("inProgress");
 const $inProgressList = document.getElementById("inProgressList");
@@ -163,9 +172,9 @@ function stemOf(p) {
   return basename(p).replace(/\.[^.]+$/, "");
 }
 
-async function removeRecent(videoPath) {
+async function removeRecent(key) {
   const { recent = [] } = await chrome.storage.local.get({ recent: [] });
-  const next = recent.filter((r) => r.videoPath !== videoPath);
+  const next = recent.filter((r) => (r.videoPath || r.folder) !== key);
   await chrome.storage.local.set({ recent: next });
   renderRecent(next);
 }
@@ -188,12 +197,19 @@ function renderRecent(recent) {
   for (const item of recent) {
     const row = document.createElement("div");
     row.className = "recent-item";
+    const key = item.videoPath || item.folder;
 
     const vIcon = document.createElement("span");
     vIcon.className = "icon";
-    vIcon.textContent = "🎬";
-    vIcon.title = "Open video";
-    vIcon.addEventListener("click", () => chrome.runtime.sendMessage({ type: "open", path: item.videoPath }));
+    if (item.videoPath) {
+      vIcon.textContent = "🎬";
+      vIcon.title = "Open video";
+      vIcon.addEventListener("click", () => chrome.runtime.sendMessage({ type: "open", path: item.videoPath }));
+    } else {
+      vIcon.textContent = "📁";
+      vIcon.title = "Open folder";
+      vIcon.addEventListener("click", () => chrome.runtime.sendMessage({ type: "open", path: item.folder }));
+    }
     row.appendChild(vIcon);
 
     if (item.transcriptPath) {
@@ -221,9 +237,12 @@ function renderRecent(recent) {
 
     const name = document.createElement("span");
     name.className = "name";
-    name.textContent = item.title || basename(item.videoPath);
-    name.title = (item.title || "") + "\n" + (item.videoPath || "") + "\n(click to show in folder)";
-    name.addEventListener("click", () => chrome.runtime.sendMessage({ type: "reveal", path: item.videoPath }));
+    name.textContent = item.title || basename(item.videoPath || item.folder);
+    name.title = (item.title || "") + "\n" + (item.videoPath || item.folder || "") + "\n(click to show in folder)";
+    name.addEventListener("click", () => {
+      if (item.videoPath) chrome.runtime.sendMessage({ type: "reveal", path: item.videoPath });
+      else if (item.folder) chrome.runtime.sendMessage({ type: "open", path: item.folder });
+    });
     row.appendChild(name);
 
     const remove = document.createElement("span");
@@ -232,7 +251,7 @@ function renderRecent(recent) {
     remove.title = "Remove from list";
     remove.addEventListener("click", (e) => {
       e.stopPropagation();
-      removeRecent(item.videoPath);
+      removeRecent(key);
     });
     row.appendChild(remove);
 
@@ -541,10 +560,14 @@ $browse.addEventListener("click", async () => {
   }
 });
 
-async function doDownload(toClaude) {
+const ACTION_BTNS = [$btn, $btnClaude, $viewTranscript, $transcriptClaude];
+
+// mode: {} plain download; {claude:true} download+Claude; {claude:true,noVideo:true}
+// transcript-only prep → Claude.
+async function doDownload(mode = {}) {
   if (!currentTab) return;
-  $btn.disabled = true; // briefly, to avoid double-firing while we gather cookies
-  $btnClaude.disabled = true;
+  const claude = !!mode.claude, noVideo = !!mode.noVideo;
+  ACTION_BTNS.forEach((b) => (b.disabled = true)); // briefly, while we gather cookies
   setStatus("Collecting cookies…", "run");
   try {
     await saveState();
@@ -552,7 +575,7 @@ async function doDownload(toClaude) {
     const cookiesText = toNetscape(cookies);
     const opts = await getOptions();
     const state = currentState();
-    setStatus(toClaude ? `Queued → Claude (${cookies.length} cookies).` : `Queued (${cookies.length} cookies).`, "run");
+    setStatus(noVideo ? "Preparing transcript → Claude…" : (claude ? `Queued → Claude (${cookies.length} cookies).` : `Queued (${cookies.length} cookies).`), "run");
 
     const payload = {
       url: currentTab.url,
@@ -561,28 +584,161 @@ async function doDownload(toClaude) {
       template: opts.template,
       ytdlpPath: opts.ytdlpPath,
       outputDir: state.downloadPath || opts.outputDir,
-      // The Claude button needs a folder with the transcript + metadata, so it
-      // forces both on for this run without changing the saved checkboxes.
-      transcript: toClaude ? true : state.transcript,
-      newFolder: toClaude ? true : state.newFolder,
+      // Claude flows need a folder with transcript + metadata, so force both on
+      // for this run without changing the saved checkboxes.
+      transcript: (claude || noVideo) ? true : state.transcript,
+      newFolder: (claude || noVideo) ? true : state.newFolder,
       transcriptLang: "en",
       premiereProject: state.premiere,
       premiereTemplate: opts.premiereTemplate || "",
     };
-    if (sectionActive()) {
+    if (noVideo) payload.noVideo = true;
+    // A trimmed section only applies to a real video download.
+    if (!noVideo && sectionActive()) {
       payload.sectionStart = trim.start;
       payload.sectionEnd = trim.end == null ? trim.duration : trim.end;
     }
     const message = { cmd: "start", payload };
-    if (toClaude) message.opts = { sendToClaude: true, claudePrompt: opts.claudePrompt };
+    if (claude) message.opts = { sendToClaude: true, claudePrompt: opts.claudePrompt };
     port.postMessage(message);
   } catch (e) {
     setStatus("Error: " + (e && e.message ? e.message : String(e)), "err");
   } finally {
-    $btn.disabled = false;
-    $btnClaude.disabled = false;
+    ACTION_BTNS.forEach((b) => (b.disabled = false));
   }
 }
 
-$btn.addEventListener("click", () => doDownload(false));
-$btnClaude.addEventListener("click", () => doDownload(true));
+$btn.addEventListener("click", () => doDownload());
+$btnClaude.addEventListener("click", () => doDownload({ claude: true }));
+$transcriptClaude.addEventListener("click", () => doDownload({ claude: true, noVideo: true }));
+$viewTranscript.addEventListener("click", openTranscript);
+
+// ---- Transcript viewer ----
+let tvCues = [];
+
+function srtTsToSec(ts) {
+  ts = ts.trim().replace(",", ".");
+  const p = ts.split(":");
+  if (p.length === 3) return (+p[0]) * 3600 + (+p[1]) * 60 + parseFloat(p[2]);
+  if (p.length === 2) return (+p[0]) * 60 + parseFloat(p[1]);
+  return parseFloat(ts) || 0;
+}
+
+function srtToCues(srt) {
+  const cues = [];
+  for (const block of (srt || "").split(/\n\s*\n/)) {
+    const lines = block.split("\n").map((s) => s.trim()).filter(Boolean);
+    const tl = lines.find((l) => l.includes("-->"));
+    if (!tl) continue;
+    const [a, b] = tl.split("-->");
+    const text = lines.filter((l) => !l.includes("-->") && !/^\d+$/.test(l)).join(" ").trim();
+    if (text) cues.push({ start: srtTsToSec(a), end: srtTsToSec(b), text });
+  }
+  return cues;
+}
+
+// Seek the active tab's video (largest <video>) to t seconds.
+async function seekVideo(t) {
+  if (!currentTab) return;
+  try {
+    await chrome.scripting.executeScript({
+      target: { tabId: currentTab.id, allFrames: true },
+      func: (sec) => {
+        const vids = Array.from(document.querySelectorAll("video")).filter((v) => isFinite(v.duration) && v.duration > 0);
+        if (!vids.length) return;
+        const v = vids.sort((a, b) => b.duration - a.duration)[0];
+        v.currentTime = sec;
+        if (v.play) { const p = v.play(); if (p && p.catch) p.catch(() => {}); }
+      },
+      args: [t],
+    });
+  } catch (_e) { /* no video / no access */ }
+}
+
+async function openTranscript() {
+  if (!currentTab) return;
+  $transcriptView.hidden = false;
+  $tvSearch.value = "";
+  $transcriptList.textContent = "";
+  $tvStatus.textContent = "Loading transcript…";
+  try {
+    const cacheKey = "tx:" + currentTab.url;
+    let srt = (await chrome.storage.session.get(cacheKey))[cacheKey];
+    if (!srt) {
+      const cookies = await chrome.cookies.getAll({ url: currentTab.url });
+      const opts = await getOptions();
+      const resp = await chrome.runtime.sendMessage({
+        type: "fetchTranscript", url: currentTab.url,
+        cookiesText: toNetscape(cookies), ytdlpPath: opts.ytdlpPath, transcriptLang: "en",
+      });
+      if (!resp || !resp.ok) {
+        $tvStatus.textContent = (resp && resp.error) || "Could not load the transcript.";
+        return;
+      }
+      srt = resp.srt;
+      chrome.storage.session.set({ [cacheKey]: srt });
+    }
+    tvCues = srtToCues(srt);
+    $tvStatus.textContent = tvCues.length ? "" : "Transcript was empty.";
+    renderCues("");
+    updateTvSelection();
+  } catch (e) {
+    $tvStatus.textContent = "Error: " + (e && e.message ? e.message : String(e));
+  }
+}
+
+function renderCues(filter) {
+  const f = (filter || "").toLowerCase();
+  const inS = trim.start;
+  const outS = trim.end == null ? (trim.duration == null ? Infinity : trim.duration) : trim.end;
+  const active = sectionActive();
+  $transcriptList.textContent = "";
+  for (const cue of tvCues) {
+    if (f && !cue.text.toLowerCase().includes(f)) continue;
+    const row = document.createElement("div");
+    row.className = "tv-cue";
+    if (active && cue.end > inS + 0.01 && cue.start < outS - 0.01) row.classList.add("between");
+
+    const t = document.createElement("span");
+    t.className = "t";
+    t.textContent = fmtTime(cue.start);
+
+    const x = document.createElement("span");
+    x.className = "x";
+    x.textContent = cue.text;
+
+    const io = document.createElement("span");
+    io.className = "io";
+    const bi = document.createElement("button");
+    bi.textContent = "in"; bi.title = "Set clip start here";
+    bi.addEventListener("click", (e) => { e.stopPropagation(); setStart(cue.start); afterSelect(); });
+    const bo = document.createElement("button");
+    bo.textContent = "out"; bo.title = "Set clip end here";
+    bo.addEventListener("click", (e) => { e.stopPropagation(); setEnd(cue.end); afterSelect(); });
+    io.append(bi, bo);
+
+    row.append(t, x, io);
+    row.addEventListener("click", () => seekVideo(cue.start));
+    $transcriptList.appendChild(row);
+  }
+}
+
+function updateTvSelection() {
+  const active = sectionActive();
+  $tvSel.textContent = active
+    ? "Selected " + fmtTime(trim.start) + " – " + fmtTime(trim.end == null ? trim.duration : trim.end)
+    : "No selection";
+  $tvUse.disabled = !active;
+}
+
+function afterSelect() {
+  renderCues($tvSearch.value);   // refresh the between-highlight
+  updateTvSelection();
+}
+
+$tvSearch.addEventListener("input", () => renderCues($tvSearch.value));
+$tvClose.addEventListener("click", () => { $transcriptView.hidden = true; });
+$tvUse.addEventListener("click", () => { $transcriptView.hidden = true; expandTrim(true); });
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && !$transcriptView.hidden) $transcriptView.hidden = true;
+});

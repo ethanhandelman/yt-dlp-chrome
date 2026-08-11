@@ -227,9 +227,32 @@ folders **above** where it opens. Because it opens inside each video's subfolder
 `CLAUDE.md` in your **Download-to folder** governs every video downloaded there. A
 ready-made template for social-clip finding is in
 [`docs/clip-finder-CLAUDE.md`](docs/clip-finder-CLAUDE.md) — copy it into your
-Download-to folder, rename it to `CLAUDE.md`, and adapt it. (It's written to match
-this tool's real filenames: `<YY-MM-DD> Title.srt` / `.metadata.md`, the ` [range]`
-suffix on trimmed clips, and the clip-relative transcript timebase.)
+Download-to folder, rename it to `CLAUDE.md`, and adapt it.
+
+### View transcript
+
+The **View transcript** button opens the video's captions in a panel inside the
+popup: a searchable list of timestamped lines. **Click a line** to seek the video to
+that point; hover a line and hit **in** / **out** to set the trim start/end, then
+**Use selection** to jump to the trimmed download. (The transcript is fetched with
+yt-dlp and cached per video for the session.)
+
+### Transcript → Claude (no video)
+
+**Transcript → Claude** sends *only* the transcript + metadata into Claude Code — no
+video download. It creates the video's workspace folder with `<title>.srt` +
+`<title>.metadata.md` and opens Claude Code there. Use it to have Claude find clips
+first, **then** download the recommended segments (they land in the same folder).
+
+### One folder per video (workspace)
+
+When **New Folder** is on, each video gets **one workspace folder** (`<date> <title>`),
+reused across actions and sessions — identified by the video's ID via a hidden
+`.ytdlp-workspaces.json` index in your Download-to folder. The full video, **every
+clip** (as `<title> [range].mp4` **files**, not subfolders), the transcript(s), and
+the metadata all live in that one folder. So: analyze the transcript, download a clip,
+download another — everything stays together, and a running Claude session sees each
+new clip appear.
 
 ## How cookies work
 

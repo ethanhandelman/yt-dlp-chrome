@@ -62,24 +62,37 @@ Before writing context, **search ivn.us first** to see whether IVN has already c
 
 ## Working Directory and File Conventions
 
-Each video is downloaded into its own folder inside the project directory. All files for a video **share one stem**, `<YY-MM-DD> <Title>` (space-separated, sanitized, capped in length):
+Each video has **one workspace folder** inside the project directory, named
+`<YY-MM-DD> <Title>` (spaces). **Everything for that video lives in this one folder** -
+the full video, every clip cut from it, the transcript(s), and the metadata. Files
+share the workspace stem; **clips are FILES** with a ` [range]` suffix on the name,
+**not** subfolders.
 
 ```
-<project-root>/                                   # the "Download to" folder (this CLAUDE.md lives here)
+<project-root>/                                    # the "Download to" folder (this CLAUDE.md lives here)
+  .ytdlp-workspaces.json                           # index used by the downloader - IGNORE it
   26-08-03 Governor JB Pritzker Can Dems Reach Independents/
-    26-08-03 Governor JB Pritzker....mp4          # source video (full episode, or a trimmed clip)
-    26-08-03 Governor JB Pritzker....srt          # captions, if available (see timebase rules)
-    26-08-03 Governor JB Pritzker....metadata.md  # the "details" file
-    26-08-03 Governor JB Pritzker....prproj       # premade Premiere project - ONLY if enabled (read-only, video-only)
-    <clip-export-folder>/                         # created later by CapCut export
-      <clip>.mp4                                  # the cut clip
-      <clip>.srt                                  # CLIP-ONLY captions
+    26-08-03 Governor JB Pritzker....metadata.md   # the "details" file (about the whole video)
+    26-08-03 Governor JB Pritzker....srt           # FULL-EPISODE captions (absolute time), if available
+    26-08-03 Governor JB Pritzker....mp4           # full source video - may be ABSENT (transcript-first)
+    26-08-03 Governor JB Pritzker... [1m03s-2m30s].mp4   # a downloaded CLIP (a file, same folder)
+    26-08-03 Governor JB Pritzker... [1m03s-2m30s].srt   # that clip's captions (clip-relative time)
+    26-08-03 Governor JB Pritzker....prproj        # premade Premiere project - ONLY if enabled (read-only)
+    <clip-export-folder>/                          # created later by CapCut export
+      <clip>.mp4 / <clip>.srt                      # CapCut's cut + clip-only captions
 ```
 
-- The `YY-MM-DD` prefix is the **download** date. Use `upload_date` in the details file for anything editorial.
-- A **trimmed clip** download appends a range suffix to the stem, e.g. `26-08-03 Governor JB Pritzker... [1m03s-2m30s]`. That folder's video and `.srt` are the **clip only**.
-- The `.prproj` is present only when the Premiere option was used. It is **read-only** and references the video only (no captions).
-- If no `.srt` exists, say so and stop. Do not infer content from the title or description, and do not try to transcribe the media.
+- **The video may be absent.** A common flow is **transcript-first**: the workspace is
+  created with just the `<stem>.metadata.md` + full `<stem>.srt` (no `.mp4` yet) so you
+  can find clips; the user then downloads the recommended segments, which appear as
+  ` [range]` files **in this same folder**. Work from the transcript + metadata; you do
+  not need the video file to run Mode A.
+- The `<YY-MM-DD>` prefix is the workspace's **creation/download** date. Use `upload_date`
+  in the details file for anything editorial.
+- A **clip** file has a ` [1m03s-2m30s]` suffix; its `.srt` is the **clip only**.
+- The `.prproj` appears only when the Premiere option was used (read-only, video-only).
+- If no `.srt` is present at all, say so and stop. Do not infer content from the title or
+  description, and do not try to transcribe the media.
 
 ### The details file (`<stem>.metadata.md`)
 
@@ -91,9 +104,11 @@ A human-readable summary followed by a fenced ```json block. Fields present when
 
 ### Two transcripts, two timebases - do not mix them
 
+Both live in the **same** workspace folder now; tell them apart by the **filename**.
+
 | | Episode SRT | Clip SRT |
 |---|---|---|
-| Where | `<stem>.srt` in a full-video folder (no `[range]` suffix) | `<stem>.srt` in a trimmed-clip folder (has a `[range]` suffix), or `<clip>.srt` in a CapCut export subfolder |
+| Filename | `<stem>.srt` (**no** `[range]` in the name) | `<stem> [range].srt`, or `<clip>.srt` in a CapCut export subfolder |
 | Timebase | absolute; runs to the episode `duration` in the details file | clip-relative; starts at or near `00:00:00` |
 | Format | usually YouTube rolling auto-captions, `>>` speaker turns, ASR noise | usually clean cues, no `>>` markers |
 | Use it for | finding clips, speaker attribution, surrounding context | exact wording of the clip, hook timing, in-clip timecodes |
@@ -123,10 +138,10 @@ Because the text is ASR output, treat every quote as approximate. Flag proposed 
 
 ## Mode Selection on Launch
 
-You are opened fresh in one video's folder. Before anything else, decide which job to run:
+You are opened fresh in one video's **workspace folder**. Before anything else, look at what's in it and decide which job to run:
 
-1. **Full video vs. clip.** If the folder/filenames carry a `[range]` suffix (e.g. `[1m03s-2m30s]`), or the `.srt` starts at ~`00:00:00` and is short, this is a **trimmed clip**. Otherwise it's a **full video**. Clip length = the range span (or the `.srt`'s last cue); the metadata `duration` is always the full episode.
-2. **Default:** a **short clip (roughly 3 minutes or less) -> Mode B** (it is already cut - find the hook and write the on-screen caption). A **full video or a long piece -> Mode A** (clip discovery).
+1. **What's here?** A **full-episode `<stem>.srt`** (no `[range]` in the name) means the whole episode is available to mine - this is the **Mode A** case, whether or not the `.mp4` is present (transcript-first). A **clip file** `<stem> [range].srt` (short, clip-relative) that is the focus means someone already cut a specific moment - the **Mode B** case. A workspace can contain both; go by what the user is asking for, and default to the full episode if they just point you at the folder.
+2. **Default by length:** a **short clip (roughly 3 minutes or less) -> Mode B** (already cut - find the hook and write the on-screen caption). A **full episode or a long piece -> Mode A** (clip discovery). Clip length = the ` [range]` span (or the clip `.srt`'s last cue); the metadata `duration` is always the full episode.
 3. **Use judgment - scan first.** Read the details file and skim the SRT. A short, self-contained moment is Mode B even if it was not trimmed; a longer clip that actually contains several distinct moments can still be Mode A. Let the content decide, not just the length.
 4. **If it is genuinely ambiguous, ask in your first message** which mode to run rather than guessing.
 5. The user can tell you to **switch modes at any point** - do it immediately and carry the same context over.

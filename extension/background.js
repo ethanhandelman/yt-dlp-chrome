@@ -182,7 +182,8 @@ function finishRunning(result) {
   removeJob(id);
   resetIcon();
   if (result) {
-    if (result.ok && result.videoPath) addRecent(result);
+    // Record video downloads AND video-less transcript prep (Transcript → Claude).
+    if (result.ok && (result.videoPath || result.folder)) addRecent(result);
     broadcast({ ev: "done", result });
   }
   broadcastQueue();
@@ -211,12 +212,14 @@ async function addRecent(result) {
   const { recent = [] } = await chrome.storage.local.get({ recent: [] });
   const entry = {
     title: result.title || "video",
-    videoPath: result.videoPath,
+    videoPath: result.videoPath || null,
     transcriptPath: result.transcriptPath || null,
     folder: result.folder || null,
     ts: Date.now(),
   };
-  const next = [entry, ...recent.filter((r) => r.videoPath !== entry.videoPath)].slice(0, MAX_RECENT);
+  // Dedup by video path when present, else by folder (video-less transcript prep).
+  const key = entry.videoPath || entry.folder;
+  const next = [entry, ...recent.filter((r) => (r.videoPath || r.folder) !== key)].slice(0, MAX_RECENT);
   await chrome.storage.local.set({ recent: next });
   broadcast({ ev: "recent", recent: next });
 }
