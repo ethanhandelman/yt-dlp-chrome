@@ -4,11 +4,13 @@
   <meta charset="utf-8" />
   <style>
     :root { color-scheme: light dark; }
+    html { overflow-x: hidden; }
     body {
       font-family: system-ui, -apple-system, Segoe UI, sans-serif;
       width: 320px;
       margin: 0;
       padding: 14px;
+      overflow-x: hidden;   /* never let a wide child grow the popup */
     }
     h1 { font-size: 14px; margin: 0 0 4px; }
     #url {
@@ -69,11 +71,11 @@
       background: #5f6368; border-radius: 3px;
     }
     .tv-foot {
-      display: flex; gap: 8px; align-items: center;
+      display: flex; flex-wrap: wrap; gap: 6px; align-items: center;
       padding: 8px; border-top: 1px solid rgba(127,127,127,0.3); font-size: 11px;
     }
-    #tvSel { flex: 1; color: #666; }
-    .tv-foot button { width: auto; flex: 0 0 auto; padding: 6px 10px; font-size: 12px; background: #5f6368; }
+    #tvSel { flex: 1 1 100%; color: #666; }   /* label on its own line; buttons wrap below */
+    .tv-foot button { width: auto; flex: 0 1 auto; padding: 6px 8px; font-size: 12px; background: #5f6368; }
     .tv-foot button:disabled { opacity: 0.5; cursor: default; }
     #tvUse { background: #1db954; }
     .field { margin-bottom: 10px; }
