@@ -668,9 +668,16 @@ async function seekVideo(t) {
 // (same session record as the trim selection).
 function showTranscriptPanel(open) {
   $transcriptView.hidden = !open;
-  // Explicit body width both ways — Chrome popups grow with content but don't
-  // reliably shrink back when a column hides.
+  // Explicit widths on html AND body — Chrome sizes the popup off the root
+  // element and grows-but-won't-shrink on its own.
+  document.documentElement.classList.toggle("tx-open", open);
   document.body.classList.toggle("tx-open", open);
+  if (!open) {
+    // Kick Chrome into recomputing the (smaller) popup size.
+    document.body.style.display = "none";
+    void document.body.offsetWidth;   // force reflow
+    document.body.style.display = "";
+  }
   $viewTranscript.textContent = open ? "Hide transcript" : "View transcript";
   persistTrim();
 }

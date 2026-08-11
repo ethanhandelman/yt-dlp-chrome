@@ -4,17 +4,19 @@
   <meta charset="utf-8" />
   <style>
     :root { color-scheme: light dark; }
-    html { overflow-x: hidden; }
+    /* Explicit widths on BOTH html and body, toggled with the transcript column:
+       Chrome sizes the popup off the root element and grows-but-won't-shrink. */
+    html { overflow-x: hidden; width: 320px; }
+    html.tx-open { width: 620px; }
     body {
       font-family: system-ui, -apple-system, Segoe UI, sans-serif;
       margin: 0;
-      display: flex;              /* [transcript column][main column] */
-      align-items: stretch;
-      overflow-x: hidden;         /* never let a wide child grow the popup */
-      width: 320px;               /* explicit widths both ways: Chrome popups */
+      position: relative;         /* anchor for the absolute transcript column */
+      overflow-x: hidden;
+      width: 320px;
     }
-    body.tx-open { width: 620px; }  /* grow but won't shrink on their own */
-    #mainCol { width: 320px; flex: 0 0 auto; box-sizing: border-box; padding: 14px; }
+    body.tx-open { width: 620px; }
+    #mainCol { width: 320px; box-sizing: border-box; padding: 14px; margin-left: auto; }
     h1 { font-size: 14px; margin: 0 0 4px; }
     #url {
       font-size: 11px;
@@ -45,9 +47,12 @@
     #downloadClaude, #transcriptClaude { background: #DE7356; }
     #viewTranscript { background: #5f6368; }
     /* Transcript viewer: collapsible LEFT column beside the main dialog.
-       The popup is toolbar-anchored (top-right), so widening extends leftward. */
+       Absolutely positioned + pinned to the body height so the MAIN column alone
+       decides the popup height — the transcript list scrolls internally and can
+       never add an outer scrollbar or cut off its own footer. */
     #transcriptView {
-      width: 300px; flex: 0 0 auto;
+      position: absolute; left: 0; top: 0; bottom: 0; width: 300px;
+      box-sizing: border-box;
       display: flex; flex-direction: column;
       border-right: 1px solid rgba(127,127,127,0.3);
       background: Canvas; color: CanvasText;
@@ -61,7 +66,7 @@
     #tvClose { width: auto; flex: 0 0 auto; background: #5f6368; padding: 6px 10px; font-size: 13px; }
     .tv-status { padding: 8px; font-size: 12px; color: #777; }
     .tv-status:empty { display: none; }
-    #transcriptList { flex: 1; overflow-y: auto; padding: 2px 8px; min-height: 220px; max-height: 520px; }
+    #transcriptList { flex: 1; min-height: 0; overflow-y: auto; padding: 2px 8px; }
     .tv-cue {
       display: flex; gap: 8px; align-items: flex-start;
       padding: 4px 2px; border-radius: 4px; cursor: pointer;
