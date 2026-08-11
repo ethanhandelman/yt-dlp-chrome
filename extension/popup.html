@@ -91,7 +91,6 @@
     #tvSel { flex: 1 1 100%; color: #666; }   /* label on its own line; buttons wrap below */
     .tv-foot button { width: auto; flex: 0 1 auto; padding: 6px 8px; font-size: 12px; background: #5f6368; }
     .tv-foot button:disabled { opacity: 0.5; cursor: default; }
-    #tvUse { background: #1db954; }
     .field { margin-bottom: 10px; }
     .field label.cap {
       display: block;
@@ -330,7 +329,6 @@
       <span id="tvSel">No selection</span>
       <button id="tvCopy">Copy Transcript</button>
       <button id="tvClear" disabled>Clear</button>
-      <button id="tvUse" disabled>Use selection</button>
     </div>
   </div>
 
@@ -344,7 +342,7 @@
         <button id="startToCurrent" type="button" title="Set range from the beginning to the player's current time">Start → current</button>
         <button id="currentToEnd" type="button" title="Set range from the player's current time to the end">Current → end</button>
       </div>
-      <button id="trimReset" type="button" hidden>Reset</button>
+      <button id="trimReset" type="button" hidden>Clear</button>
       <button id="trimToggle" type="button" class="trim-arrow" aria-expanded="false" title="Trim to a section">Trim <span class="caret">▾</span></button>
     </div>
     <div id="trimPanel" hidden>

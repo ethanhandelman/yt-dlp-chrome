@@ -35,7 +35,6 @@ const $tvClose = document.getElementById("tvClose");
 const $transcriptList = document.getElementById("transcriptList");
 const $tvStatus = document.getElementById("tvStatus");
 const $tvSel = document.getElementById("tvSel");
-const $tvUse = document.getElementById("tvUse");
 const $tvCopy = document.getElementById("tvCopy");
 const $tvClear = document.getElementById("tvClear");
 const $status = document.getElementById("status");
@@ -338,8 +337,21 @@ function applyTrim() {
   // Clip length readout.
   $clipLen.textContent = sectionActive() ? "Clip: " + fmtTime(endVal - trim.start) : "Full video";
 
-  // Reset only when a real section is selected (lives in the header).
+  // Clear only when a real section is selected (lives in the header).
   $trimReset.hidden = !sectionActive();
+
+  // Keep the transcript panel's highlight + footer in lockstep with every
+  // trim change (slider, boxes, presets, viewer in/out, clear).
+  syncViewerToTrim();
+}
+
+// Reset the selection everywhere — used by BOTH the trim header Clear and the
+// transcript panel's Clear.
+function clearSelection() {
+  trim.start = 0;
+  trim.end = null;
+  persistTrim();
+  applyTrim();
 }
 
 function setStart(sec) {
@@ -472,12 +484,7 @@ $currentToEnd.addEventListener("click", async () => {
   expandTrim(true);
 });
 
-$trimReset.addEventListener("click", () => {
-  trim.start = 0;
-  trim.end = null;
-  persistTrim();
-  applyTrim();
-});
+$trimReset.addEventListener("click", clearSelection);
 $trimToggle.addEventListener("click", () => expandTrim($trimPanel.hidden));
 
 // ---- Service worker port (progress + state) ----
@@ -719,17 +726,16 @@ async function openTranscript() {
   }
 }
 
+let tvRows = [];   // [{cue, el}] for the currently rendered rows (in-place highlight sync)
+
 function renderCues(filter) {
   const f = (filter || "").toLowerCase();
-  const inS = trim.start;
-  const outS = trim.end == null ? (trim.duration == null ? Infinity : trim.duration) : trim.end;
-  const active = sectionActive();
   $transcriptList.textContent = "";
+  tvRows = [];
   for (const cue of tvCues) {
     if (f && !cue.text.toLowerCase().includes(f)) continue;
     const row = document.createElement("div");
     row.className = "tv-cue";
-    if (active && cue.end > inS + 0.01 && cue.start < outS - 0.01) row.classList.add("between");
 
     const t = document.createElement("span");
     t.className = "t";
@@ -752,7 +758,25 @@ function renderCues(filter) {
     row.append(t, x, io);
     row.addEventListener("click", () => seekVideo(cue.start));
     $transcriptList.appendChild(row);
+    tvRows.push({ cue, el: row });
   }
+  syncViewerToTrim();   // paint the highlight for the fresh rows
+}
+
+// Keep the transcript highlight + footer matching the trim state. Cheap
+// in-place class toggles so it can run on every slider-drag tick.
+function syncViewerToTrim() {
+  if ($transcriptView.hidden || !tvRows.length) {
+    if (!$transcriptView.hidden) updateTvSelection();
+    return;
+  }
+  const active = sectionActive();
+  const inS = trim.start;
+  const outS = trim.end == null ? (trim.duration == null ? Infinity : trim.duration) : trim.end;
+  for (const { cue, el } of tvRows) {
+    el.classList.toggle("between", active && cue.end > inS + 0.01 && cue.start < outS - 0.01);
+  }
+  updateTvSelection();
 }
 
 // A new IN always takes effect: keep the out only if it's still after the new
@@ -761,8 +785,7 @@ function viewerSetIn(cue) {
   trim.start = Math.max(0, cue.start);
   if (trim.end != null && trim.end <= trim.start + MIN_GAP) trim.end = null;
   persistTrim();
-  applyTrim();
-  afterSelect();
+  applyTrim();   // updates slider/boxes AND the transcript highlight
 }
 
 // Mirrored for OUT: keep the in only if it's still before the new out;
@@ -773,7 +796,6 @@ function viewerSetOut(cue) {
   if (trim.start >= trim.end - MIN_GAP) trim.start = 0;
   persistTrim();
   applyTrim();
-  afterSelect();
 }
 
 function updateTvSelection() {
@@ -781,28 +803,13 @@ function updateTvSelection() {
   $tvSel.textContent = active
     ? "Selected " + fmtTime(trim.start) + " – " + fmtTime(trim.end == null ? trim.duration : trim.end)
     : "No selection";
-  $tvUse.disabled = !active;
   $tvClear.disabled = !active;
   $tvCopy.textContent = active ? "Copy Selection" : "Copy Transcript";
 }
 
-function afterSelect() {
-  renderCues($tvSearch.value);   // refresh the between-highlight
-  updateTvSelection();
-}
-
 $tvSearch.addEventListener("input", () => renderCues($tvSearch.value));
 $tvClose.addEventListener("click", () => showTranscriptPanel(false));
-// Both columns are visible side-by-side now — Use just expands the trim panel.
-$tvUse.addEventListener("click", () => expandTrim(true));
-
-$tvClear.addEventListener("click", () => {
-  trim.start = 0;
-  trim.end = null;
-  persistTrim();
-  applyTrim();
-  afterSelect();
-});
+$tvClear.addEventListener("click", clearSelection);
 
 $tvCopy.addEventListener("click", async () => {
   const active = sectionActive();
