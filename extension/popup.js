@@ -272,7 +272,11 @@ let trimKey = null;           // "<loadId>|<url>" — identifies this loaded vid
 function persistTrim() {
   if (!trimKey || !currentTab) return;
   chrome.storage.session.set({
-    ["trim:" + currentTab.id]: { key: trimKey, start: trim.start, end: trim.end, expanded: !$trimPanel.hidden },
+    ["trim:" + currentTab.id]: {
+      key: trimKey, start: trim.start, end: trim.end,
+      expanded: !$trimPanel.hidden,
+      txOpen: !$transcriptView.hidden,
+    },
   });
 }
 
@@ -405,6 +409,7 @@ async function initTrim() {
     // re-open). A refresh (new loadId) or different video (new url) won't match.
     let restored = false;
     let restoreExpanded = false;
+    let restoreTxOpen = false;
     try {
       const store = await chrome.storage.session.get("trim:" + currentTab.id);
       const saved = store["trim:" + currentTab.id];
@@ -412,13 +417,15 @@ async function initTrim() {
         trim.start = Number(saved.start) || 0;
         trim.end = saved.end == null ? null : Number(saved.end);
         restoreExpanded = !!saved.expanded;
+        restoreTxOpen = !!saved.txOpen;
         restored = true;
       }
     } catch (_e) { /* session storage unavailable */ }
     if (!restored) { trim.start = 0; trim.end = null; }
     applyTrim();
-    // Reopen the panel if it was open for this page last time.
+    // Reopen the panels that were open for this page last time.
     if (restoreExpanded) expandTrim(true);
+    if (restoreTxOpen) openTranscript();   // renders from the session SRT cache
     return;
   }
   applyTrim();
@@ -613,7 +620,7 @@ async function doDownload(mode = {}) {
 $btn.addEventListener("click", () => doDownload());
 $btnClaude.addEventListener("click", () => doDownload({ claude: true }));
 $transcriptClaude.addEventListener("click", () => doDownload({ claude: true, noVideo: true }));
-$viewTranscript.addEventListener("click", openTranscript);
+$viewTranscript.addEventListener("click", toggleTranscript);
 
 // ---- Transcript viewer ----
 let tvCues = [];
@@ -657,9 +664,22 @@ async function seekVideo(t) {
   } catch (_e) { /* no video / no access */ }
 }
 
+// Show/collapse the transcript side column and remember the state per video
+// (same session record as the trim selection).
+function showTranscriptPanel(open) {
+  $transcriptView.hidden = !open;
+  $viewTranscript.textContent = open ? "Hide transcript" : "View transcript";
+  persistTrim();
+}
+
+function toggleTranscript() {
+  if ($transcriptView.hidden) openTranscript();
+  else showTranscriptPanel(false);
+}
+
 async function openTranscript() {
   if (!currentTab) return;
-  $transcriptView.hidden = false;
+  showTranscriptPanel(true);
   $tvSearch.value = "";
   $transcriptList.textContent = "";
   $tvStatus.textContent = "Loading transcript…";
@@ -762,8 +782,9 @@ function afterSelect() {
 }
 
 $tvSearch.addEventListener("input", () => renderCues($tvSearch.value));
-$tvClose.addEventListener("click", () => { $transcriptView.hidden = true; });
-$tvUse.addEventListener("click", () => { $transcriptView.hidden = true; expandTrim(true); });
+$tvClose.addEventListener("click", () => showTranscriptPanel(false));
+// Both columns are visible side-by-side now — Use just expands the trim panel.
+$tvUse.addEventListener("click", () => expandTrim(true));
 
 $tvClear.addEventListener("click", () => {
   trim.start = 0;
@@ -790,5 +811,5 @@ $tvCopy.addEventListener("click", async () => {
   }
 });
 document.addEventListener("keydown", (e) => {
-  if (e.key === "Escape" && !$transcriptView.hidden) $transcriptView.hidden = true;
+  if (e.key === "Escape" && !$transcriptView.hidden) showTranscriptPanel(false);
 });
