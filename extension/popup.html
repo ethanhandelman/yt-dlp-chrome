@@ -11,7 +11,9 @@
       display: flex;              /* [transcript column][main column] */
       align-items: stretch;
       overflow-x: hidden;         /* never let a wide child grow the popup */
+      width: 320px;               /* explicit widths both ways: Chrome popups */
     }
+    body.tx-open { width: 620px; }  /* grow but won't shrink on their own */
     #mainCol { width: 320px; flex: 0 0 auto; box-sizing: border-box; padding: 14px; }
     h1 { font-size: 14px; margin: 0 0 4px; }
     #url {
@@ -35,9 +37,13 @@
     }
     button:disabled { opacity: 0.6; cursor: default; }
     .dl-row { display: flex; gap: 6px; margin-bottom: 6px; }
-    .dl-row button { width: auto; flex: 1; min-width: 0; }
-    #downloadClaude, #transcriptClaude { background: #6b3fd4; font-size: 13px; }
-    #viewTranscript { background: #5f6368; font-size: 13px; }
+    .dl-row button {
+      width: auto; flex: 1; min-width: 0;
+      font-size: 12px; padding: 9px 4px;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    #downloadClaude, #transcriptClaude { background: #DE7356; }
+    #viewTranscript { background: #5f6368; }
     /* Transcript viewer: collapsible LEFT column beside the main dialog.
        The popup is toolbar-anchored (top-right), so widening extends leftward. */
     #transcriptView {
@@ -355,6 +361,11 @@
     </div>
   </div>
 
+  <div class="dl-row">
+    <button id="viewTranscript" title="View the transcript; click a line to seek, set in/out to trim">View transcript</button>
+    <button id="transcriptClaude" title="Send only the transcript + metadata (no video) to Claude Code">Transcript → Claude</button>
+  </div>
+
   <div class="field">
     <label class="cap" for="path">Download to</label>
     <div class="pathrow">
@@ -370,12 +381,8 @@
   </div>
 
   <div class="dl-row">
-    <button id="download">Download this video</button>
+    <button id="download">Download</button>
     <button id="downloadClaude" title="Download, then open Claude Code in the folder to find clips">Download → Claude</button>
-  </div>
-  <div class="dl-row">
-    <button id="viewTranscript" title="View the transcript; click a line to seek, set in/out to trim">View transcript</button>
-    <button id="transcriptClaude" title="Send only the transcript + metadata (no video) to Claude Code">Transcript → Claude</button>
   </div>
 
   <div id="status"></div>
