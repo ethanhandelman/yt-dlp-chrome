@@ -221,6 +221,10 @@ pointed at the video's folder — so Claude immediately reads the `.srt` + `.met
   Without it, the download still completes; the link just does nothing.
 - Opening the folder shows a one-time **trust confirmation** in Claude Code.
 - The launch prompt is editable in **Settings → Claude launch prompt**.
+- Sessions open in **auto** permission mode: each workspace folder is seeded with
+  a `.claude/settings.json` (`permissions.defaultMode: "auto"`) when created —
+  edit or delete that file per folder if you want a different mode (it is never
+  overwritten once it exists).
 
 **Standing instructions via `CLAUDE.md`:** Claude Code loads every `CLAUDE.md` in the
 folders **above** where it opens. Because it opens inside each video's subfolder, a

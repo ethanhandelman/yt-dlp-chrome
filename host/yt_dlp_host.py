@@ -169,6 +169,20 @@ def resolve_workspace(output, video_id, workspace_stem):
 
     base = os.path.join(output, folder)
     os.makedirs(base, exist_ok=True)
+
+    # Claude Code sessions launched on this folder (Download -> Claude) should
+    # open in "auto" permission mode. The claude:// deep link has no mode param,
+    # so seed the workspace's project settings instead. Never overwrite one the
+    # user has edited.
+    try:
+        settings_path = os.path.join(base, ".claude", "settings.json")
+        if not os.path.exists(settings_path):
+            os.makedirs(os.path.dirname(settings_path), exist_ok=True)
+            with open(settings_path, "w", encoding="utf-8") as f:
+                json.dump({"permissions": {"defaultMode": "auto"}}, f, indent=2)
+    except OSError:
+        pass
+
     return base, folder
 
 

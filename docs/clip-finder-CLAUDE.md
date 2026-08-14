@@ -71,6 +71,7 @@ share the workspace stem; **clips are FILES** with a ` [range]` suffix on the na
 ```
 <project-root>/                                    # the "Download to" folder (this CLAUDE.md lives here)
   .ytdlp-workspaces.json                           # index used by the downloader - IGNORE it
+                                                   # (each workspace also has a .claude/ settings folder - IGNORE it)
   26-08-03 Governor JB Pritzker Can Dems Reach Independents/
     26-08-03 Governor JB Pritzker....metadata.md   # the "details" file (about the whole video)
     26-08-03 Governor JB Pritzker....srt           # FULL-EPISODE captions (absolute time), if available
