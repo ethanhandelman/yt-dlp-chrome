@@ -61,6 +61,11 @@ _send_lock = threading.Lock()
 
 PROGRESS_RE = re.compile(r"DLPCT\s+([\d.]+)%")
 PHASE_MARKERS = ("[Merger]", "[VideoConvertor]", "[ExtractAudio]", "[Fixup")
+# A trimmed section makes yt-dlp hand the download to ffmpeg, which reports no
+# yt-dlp progress until it exits (one final "DLPCT 100%"). ffmpeg's own status
+# lines ("frame=... time=00:01:23.45 ...") do arrive, so the host derives the
+# percent from that timestamp against the clip length instead.
+FFMPEG_TIME_RE = re.compile(r"\btime=(-?)(\d+):(\d\d):(\d\d(?:\.\d+)?)")
 
 
 def read_message():
@@ -596,20 +601,36 @@ def handle_download(msg):
                 creationflags=CREATIONFLAGS,
             )
             last_sent = (-1, None)
+            clip_len = (section_end - section_start) if has_section else 0
+
+            def report(pct, phase):
+                nonlocal last_sent
+                if (pct, phase) != last_sent:
+                    last_sent = (pct, phase)
+                    send_message({"kind": "progress", "percent": pct, "phase": phase})
+
             for line in proc.stdout:
                 log_tail.append(line)
                 if len(log_tail) > 400:
                     del log_tail[:200]
                 m = PROGRESS_RE.search(line)
                 if m:
-                    pct = int(float(m.group(1)))
-                    if (pct, "download") != last_sent:
-                        last_sent = (pct, "download")
-                        send_message({"kind": "progress", "percent": pct, "phase": "download"})
-                elif any(mk in line for mk in PHASE_MARKERS):
-                    if last_sent[1] != "processing":
-                        last_sent = (100, "processing")
-                        send_message({"kind": "progress", "percent": 100, "phase": "processing"})
+                    report(int(float(m.group(1))), "download")
+                    continue
+                if any(mk in line for mk in PHASE_MARKERS):
+                    report(100, "processing")
+                    continue
+                # ffmpeg status line during a section download (before any
+                # post-processing marker): map its output timestamp onto the clip.
+                # Hold at 99 until yt-dlp's own 100% confirms the file is complete.
+                if has_section and clip_len > 0 and last_sent[1] != "processing":
+                    t = FFMPEG_TIME_RE.search(line)
+                    if t:
+                        secs = 0.0 if t.group(1) else (
+                            int(t.group(2)) * 3600 + int(t.group(3)) * 60 + float(t.group(4)))
+                        pct = max(0, min(99, int(secs / clip_len * 100)))
+                        if pct >= last_sent[0] or last_sent[1] != "download":
+                            report(pct, "download")
             returncode = proc.wait()
 
             # Resolve the final media path.

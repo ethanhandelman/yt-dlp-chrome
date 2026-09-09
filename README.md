@@ -99,6 +99,13 @@ full download. Video-only clips use a fast keyframe-snap cut; when **Transcript*
 is also on, the clip is cut **frame-accurately** and the transcript is **windowed
 to the range and re-based to start at 0:00**, so captions line up with the clip.
 
+> **Speed:** a time range makes yt-dlp hand the download to ffmpeg, which streams
+> the clip over a single connection that YouTube throttles to roughly 1.5× playback
+> speed (a 5-minute clip takes about 3 minutes). The progress ring/percentage
+> tracks the clip position, so a long selection will move slowly but is not stuck.
+> The full-video path (`-N 16`) is much faster — for very long selections, consider
+> downloading the whole video instead.
+>
 > Needs **ffmpeg** (already required for the mp4 recode). Reading the player works
 > on standard HTML5 players (YouTube, etc.); on DRM or cross-origin embedded
 > players the slider/current-time buttons are disabled — type timestamps manually.
