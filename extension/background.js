@@ -145,6 +145,9 @@ function pump() {
       drawRing(msg.percent, msg.phase);
       chrome.action.setBadgeText({ text: msg.percent + "%" });
       broadcastQueue();
+    } else if (msg.kind === "notice") {
+      // Host-side status text worth showing (e.g. caption retry after a rate limit).
+      broadcast({ ev: "notice", text: msg.text || "" });
     } else if (msg.kind === "heartbeat") {
       // Keepalive from the host during quiet stretches. Receiving it already
       // reset the service-worker idle timer; redraw so the ring stays fresh.

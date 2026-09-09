@@ -11,7 +11,8 @@ streams several `progress` messages, then one `result`).
 Message types:
   "download"   {url, cookiesText, template, ytdlpPath, outputDir, transcript,
                 newFolder, transcriptLang}
-               -> streams {kind:"progress", percent, phase} while running, then
+               -> streams {kind:"progress", percent, phase} (and occasional
+                  {kind:"heartbeat"} / {kind:"notice", text}) while running, then
                   {kind:"result", ok, returncode, videoPath, transcriptPath,
                    folder, title, note, stdout, stderr}.
   "pickFolder" {current}    -> {ok, path}
@@ -67,6 +68,13 @@ PHASE_MARKERS = ("[Merger]", "[VideoConvertor]", "[ExtractAudio]", "[Fixup")
 # percent from that timestamp against the clip length instead.
 FFMPEG_TIME_RE = re.compile(r"\btime=(-?)(\d+):(\d\d):(\d\d(?:\.\d+)?)")
 
+# YouTube answers requests for *auto-translated* caption tracks with HTTP 429
+# unless ~60s pass between extraction and the caption request (yt-dlp#13831).
+# This also bites English videos whose original language YouTube mislabels,
+# since "en" then counts as a translation. On that error the caption fetch is
+# retried once with this delay.
+SUBS_RETRY_SLEEP = 60
+
 
 def read_message():
     raw_len = sys.stdin.buffer.read(4)
@@ -94,6 +102,24 @@ def run_proc(argv):
         errors="replace",
         creationflags=CREATIONFLAGS,
     )
+
+
+def fetch_subs(ytdlp, cookie_path, lang, out_pattern, url, on_retry=None):
+    """Run yt-dlp's subtitle fetch (manual + auto captions for `lang`, converted
+    to SRT, written per `out_pattern`). If YouTube rate-limits the caption
+    request (HTTP 429, see SUBS_RETRY_SLEEP), call on_retry() and run it once
+    more with --sleep-subtitles. Returns (proc, rate_limited)."""
+    argv = [ytdlp, "--cookies", cookie_path, "--skip-download",
+            "--write-subs", "--write-auto-subs", "--sub-langs", lang,
+            "--convert-subs", "srt", "-o", out_pattern, url]
+    proc = run_proc(argv)
+    out = (proc.stdout or "") + (proc.stderr or "")
+    if proc.returncode != 0 and "subtitles" in out and "429" in out:
+        if on_retry:
+            on_retry()
+        proc = run_proc(argv[:1] + ["--sleep-subtitles", str(SUBS_RETRY_SLEEP)] + argv[1:])
+        return proc, True
+    return proc, False
 
 
 def build_argv(template, values):
@@ -653,12 +679,17 @@ def handle_download(msg):
         transcript_path = None
         if transcript:
             sub_out = os.path.join(base, file_stem + ".%(ext)s")
-            run_proc([ytdlp, "--cookies", cookie_path, "--skip-download",
-                      "--write-subs", "--write-auto-subs", "--sub-langs", lang,
-                      "--convert-subs", "srt", "-o", sub_out, url])
+            _, rate_limited = fetch_subs(
+                ytdlp, cookie_path, lang, sub_out, url,
+                on_retry=lambda: send_message({
+                    "kind": "notice",
+                    "text": "YouTube rate-limited the captions; retrying after a %ds pause…"
+                            % SUBS_RETRY_SLEEP}))
             clip_s = section_start if has_section else None
             clip_e = section_end if has_section else None
             transcript_path, tnote = write_transcript(base, file_stem, clip_s, clip_e)
+            if rate_limited:
+                tnote += " (retried after a YouTube rate limit)"
             notes.append(tnote)
 
         if new_folder and not no_video and msg.get("premiereProject") and msg.get("premiereTemplate") and video_path:
@@ -803,11 +834,14 @@ def handle_fetch_transcript(msg):
         with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as f:
             f.write(cookies_text)
         tmpdir = tempfile.mkdtemp(prefix="ytdlp_tx_")
-        run_proc([ytdlp, "--cookies", cookie_path, "--skip-download",
-                  "--write-subs", "--write-auto-subs", "--sub-langs", lang,
-                  "--convert-subs", "srt", "-o", os.path.join(tmpdir, "x.%(ext)s"), url])
+        proc, rate_limited = fetch_subs(
+            ytdlp, cookie_path, lang, os.path.join(tmpdir, "x.%(ext)s"), url)
         produced = sorted(glob.glob(os.path.join(tmpdir, "x*.srt")))
         if not produced:
+            if rate_limited and proc.returncode != 0:
+                return {"ok": False, "error":
+                        "YouTube is rate-limiting captions for this video (HTTP 429). "
+                        "Try again in a minute."}
             return {"ok": False, "error": "No transcript available for this video."}
         with open(produced[0], "r", encoding="utf-8", errors="replace") as f:
             srt = clean_srt(f.read())

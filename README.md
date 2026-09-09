@@ -166,6 +166,13 @@ valid SRT, so you can import it into Premiere as searchable captions *and* it
 reads cleanly for an LLM like Claude. If a video has no captions, the popup says
 "Transcript: none available" and the video still downloads.
 
+> **Rate-limited captions:** YouTube currently rejects requests for *auto-translated*
+> caption tracks with HTTP 429 unless about a minute passes after the video info
+> is fetched ([yt-dlp#13831](https://github.com/yt-dlp/yt-dlp/issues/13831)). This
+> also hits English videos whose original language YouTube has mislabeled. When it
+> happens the host retries once with a 60-second pause (the popup says so), so the
+> transcript takes about a minute longer instead of failing.
+
 > **Premiere tip:** Window ▸ Text ▸ Captions ▸ *Import captions from file* → pick
 > the `.srt`. The Captions tab is searchable and clicking a line jumps the
 > playhead — a transcript indexed to the video.

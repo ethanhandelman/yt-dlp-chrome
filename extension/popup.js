@@ -706,10 +706,21 @@ async function openTranscript() {
     if (!srt) {
       const cookies = await chrome.cookies.getAll({ url: currentTab.url });
       const opts = await getOptions();
-      const resp = await chrome.runtime.sendMessage({
-        type: "fetchTranscript", url: currentTab.url,
-        cookiesText: toNetscape(cookies), ytdlpPath: opts.ytdlpPath, transcriptLang: "en",
-      });
+      // The host retries once with a 60s pause when YouTube rate-limits the
+      // caption request; a one-shot native call can't stream that, so explain
+      // the wait if the fetch is taking longer than a normal one.
+      const slowHint = setTimeout(() => {
+        $tvStatus.textContent = "Still loading… YouTube may be rate-limiting captions; retrying after a 60 s pause.";
+      }, 12000);
+      let resp;
+      try {
+        resp = await chrome.runtime.sendMessage({
+          type: "fetchTranscript", url: currentTab.url,
+          cookiesText: toNetscape(cookies), ytdlpPath: opts.ytdlpPath, transcriptLang: "en",
+        });
+      } finally {
+        clearTimeout(slowHint);
+      }
       if (!resp || !resp.ok) {
         $tvStatus.textContent = (resp && resp.error) || "Could not load the transcript.";
         return;
