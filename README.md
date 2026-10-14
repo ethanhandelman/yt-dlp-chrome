@@ -1,4 +1,4 @@
-# yt-dlp Downloader (Chrome extension, Windows)
+# yt-dlp Downloader (Chrome extension, Windows & macOS)
 
 A toolbar button that downloads the video on the current page with
 [`yt-dlp`](https://github.com/yt-dlp/yt-dlp), using your browser's cookies for the
@@ -9,17 +9,32 @@ Because a Chrome extension can't launch programs directly, it talks to a small
 your `yt-dlp` command.
 
 ```
-[toolbar button] → [service worker] → [Python host] → yt-dlp.exe
+[toolbar button] → [service worker] → [Python host] → yt-dlp
    reads cookies                       writes cookies.txt, runs command
 ```
 
+The same code runs on both systems; only the installer and launcher differ
+(`install.ps1` + `launch_host.bat` on Windows, `install.sh` + `launch_host.sh` on
+macOS).
+
 ## Prerequisites
 
+**Windows**
 - **Google Chrome** (or Chromium-based browser using the same registry path).
-- **Python 3** on Windows (`py -3` or `python` on PATH).
+- **Python 3** (`py -3` or `python` on PATH).
 - **yt-dlp** — [`yt-dlp.exe`](https://github.com/yt-dlp/yt-dlp/releases). Note the
   full path, or put it on your PATH. (For merging video+audio, also install
   **ffmpeg**.)
+
+**macOS**
+- **Google Chrome**.
+- **Python 3, yt-dlp and ffmpeg** — easiest via [Homebrew](https://brew.sh):
+  ```sh
+  brew install python yt-dlp ffmpeg
+  ```
+  The host's launcher adds Homebrew's folders (`/opt/homebrew/bin`,
+  `/usr/local/bin`) to its PATH, because Chrome started from the Dock doesn't see
+  your shell's PATH.
 
 ## Install
 
@@ -31,7 +46,8 @@ your `yt-dlp` command.
    (The bundled `key` in `manifest.json` pins this ID. If it differs, see step 3.)
 
 ### 2. Register the native host
-In PowerShell, from the `host/` folder:
+
+**Windows** — in PowerShell, from the `host/` folder:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File install.ps1
@@ -44,15 +60,39 @@ This generates `com.ytdlp.downloader.json` from
 generated file is git-ignored, so `git pull` never conflicts with it — just
 **re-run `install.ps1` after pulling** if the repo location changed.
 
+**macOS** — in Terminal, from the `host/` folder:
+
+```sh
+./install.sh
+```
+
+This writes `com.ytdlp.downloader.json` (pointing at `launch_host.sh`) into
+`~/Library/Application Support/Google/Chrome/NativeMessagingHosts/`, and warns if
+it can't find `yt-dlp` or `ffmpeg` where the host will look. **Quit Chrome
+completely (Cmd+Q) and reopen it** afterwards. Re-run `install.sh` if you move
+the repo. (Other Chromium browsers — Brave, Edge, Arc — read from their own
+folders under `~/Library/Application Support/` and aren't set up by the script.)
+
 ### 3. (Only if your extension ID differs)
 ```powershell
 powershell -ExecutionPolicy Bypass -File install.ps1 -ExtensionId <your-id>
 ```
+```sh
+./install.sh --extension-id <your-id>
+```
 
 ### 4. Configure
 Right-click the toolbar icon → **Options** (or click **Settings** in the popup):
-- **Path to yt-dlp** — e.g. `C:\tools\yt-dlp.exe` (or `yt-dlp.exe` if on PATH).
-- **Output directory** — e.g. `%USERPROFILE%\Downloads`.
+- **Path to yt-dlp** — e.g. `C:\tools\yt-dlp.exe` (or `yt-dlp.exe` if on PATH);
+  on a Mac, `yt-dlp` (Homebrew) or a full path.
+- **Output directory** — e.g. `%USERPROFILE%\Downloads` on Windows, `~/Downloads`
+  on a Mac.
+- **Enable Send to Claude features** — shows/hides the **Download → Claude** and
+  **Transcript → Claude** buttons (see below).
+
+  The paths, Premiere template and Claude toggle are saved **per computer**, so a
+  Chrome profile synced between a PC and a Mac keeps each machine's own paths. The
+  command template and Claude prompt sync across machines.
 - **Command template** — defaults to:
   ```
   "{ytdlp}" -N 16 --recode-video mp4 --cookies "{cookies}" -P "{output}" -f "bv*[height>1080][ext=webm]+ba/bv*[vcodec^=avc1]+ba[acodec^=mp4a]/bv*[ext=mp4]+ba[ext=m4a]/b[ext=mp4]/b" "{url}"
@@ -140,14 +180,14 @@ browser is fully restarted any not-yet-started queued items are cleared.
 The popup lists your **last 5 downloads**, each with a 🎬 video icon, a 📄
 transcript icon (if a transcript was saved), and the title:
 
-- **Click the title** → show the file selected in Explorer (drag the real file
-  from there into Premiere, etc.).
+- **Click the title** → show the file selected in Explorer / Finder (drag the
+  real file from there into Premiere, etc.).
 - **Click 🎬** → open the video in your default player.
 - **Click 📄** → open the captions `.srt`.
 - **Drag 📄** → drops the captions as a `.srt` file / text into another app
   (e.g. Premiere or Claude). The video isn't draggable on purpose — browser
   drag-out only produces a temporary copy, which is bad for editing; use **click
-  title → drag from Explorer** instead.
+  title → drag from Explorer/Finder** instead.
 
 ### Checkbox behavior
 
@@ -177,8 +217,9 @@ reads cleanly for an LLM like Claude. If a video has no captions, the popup says
 > the `.srt`. The Captions tab is searchable and clicking a line jumps the
 > playhead — a transcript indexed to the video.
 
-> **Browse** requires Python's `tkinter` (included with standard CPython on
-> Windows). If it's missing, the popup says so — just type the path instead.
+> **Browse** uses Python's `tkinter` on Windows (included with standard CPython)
+> and the native macOS folder picker on a Mac. If it's unavailable, the popup says
+> so — just type the path instead.
 
 ### Metadata (New Folder only)
 
@@ -205,7 +246,8 @@ swap can't update it; the cleaned `.srt` stays in the folder for you to **drag i
 manually**.
 
 **One-time setup:**
-1. Make a folder, e.g. `C:\ytdlp-premiere-template\`, with one placeholder file
+1. Make a folder, e.g. `C:\ytdlp-premiere-template\` (or
+   `~/ytdlp-premiere-template/` on a Mac), with one placeholder file
    named exactly `__YTDLP_VIDEO__.mp4` (any short clip).
 2. In **your** Premiere version: new project → import it → drag the video onto a
    new **sequence** → **Save As** `template.prproj` in that folder.
@@ -233,6 +275,10 @@ pointed at the video's folder — so Claude immediately reads the `.srt` + `.met
 
 - Requires the **Claude Desktop app** installed (it handles the `claude://` link).
   Without it, the download still completes; the link just does nothing.
+- **Optional:** untick **Settings → Enable Send to Claude features** to hide both
+  Claude buttons (e.g. on a computer without Claude Desktop). While it's off, new
+  workspace folders also skip the `.claude/settings.json` described below. The
+  setting is per computer.
 - Opening the folder shows a one-time **trust confirmation** in Claude Code.
 - The launch prompt is editable in **Settings → Claude launch prompt**.
 - Sessions open in **auto** permission mode: each workspace folder is seeded with
@@ -309,21 +355,34 @@ path that contains spaces. Examples:
 ```powershell
 powershell -ExecutionPolicy Bypass -File install.ps1 -Uninstall
 ```
+```sh
+./install.sh --uninstall
+```
 Then remove the extension from `chrome://extensions`.
 
 ## Troubleshooting
 
 - **"No response from the native host"** — host not registered (re-run
-  `install.ps1`), or the extension ID doesn't match `allowed_origins` in
-  `com.ytdlp.downloader.template.json` (re-run `install.ps1 -ExtensionId <id>`).
+  `install.ps1` / `install.sh`), or the extension ID doesn't match
+  `allowed_origins` in `com.ytdlp.downloader.template.json` (re-run with
+  `-ExtensionId <id>` / `--extension-id <id>`). On a Mac, also quit and reopen
+  Chrome after installing.
 - **"Executable not found"** — fix the yt-dlp path in Options.
+- **Mac: works from Terminal but not from Chrome / ffmpeg "not found"** — Chrome
+  started from the Dock only sees Homebrew's folders via `launch_host.sh`. If you
+  installed yt-dlp elsewhere, set its full path in Settings; for ffmpeg elsewhere,
+  add `--ffmpeg-location /path/to/ffmpeg` to the command template.
+- **Mac: "Update yt-dlp" says to use brew** — Homebrew-installed yt-dlp updates
+  with `brew upgrade yt-dlp`.
 - **Native host logging** — run `host/yt_dlp_host.py` is invoked by Chrome via
-  `launch_host.bat`; to debug, check Chrome's `chrome://extensions` → service
-  worker console for `lastError`, and confirm `py -3 host\yt_dlp_host.py` runs.
+  `launch_host.bat` (Windows) or `launch_host.sh` (Mac); to debug, check Chrome's
+  `chrome://extensions` → service worker console for `lastError`, and confirm
+  `py -3 host\yt_dlp_host.py` (Windows) / `python3 host/yt_dlp_host.py` (Mac) runs.
 
 ## Files
 
 ```
-extension/   manifest.json, popup.*, background.js, options.*, icons/
-host/        yt_dlp_host.py, launch_host.bat, com.ytdlp.downloader.template.json, install.ps1
+extension/   manifest.json, popup.*, background.js, options.*, settings.js, icons/
+host/        yt_dlp_host.py, com.ytdlp.downloader.template.json,
+             install.ps1 + launch_host.bat (Windows), install.sh + launch_host.sh (macOS)
 ```

@@ -45,6 +45,7 @@
       white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
     }
     #downloadClaude, #transcriptClaude { background: #DE7356; }
+    #downloadClaude[hidden], #transcriptClaude[hidden] { display: none; }
     #viewTranscript { background: #5f6368; }
     /* Transcript viewer: collapsible LEFT column beside the main dialog.
        Absolutely positioned + pinned to the body height so the MAIN column alone
@@ -372,7 +373,7 @@
   <div class="field">
     <label class="cap" for="path">Download to</label>
     <div class="pathrow">
-      <input type="text" id="path" placeholder="C:\Users\you\Downloads" />
+      <input type="text" id="path" />
       <button id="browse">Browse…</button>
     </div>
   </div>
@@ -403,6 +404,7 @@
   <div class="links"><a id="opts">Settings</a></div>
   </div><!-- /mainCol -->
 
+  <script src="settings.js"></script>
   <script src="popup.js"></script>
 </body>
 </html>

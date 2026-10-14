@@ -24,6 +24,9 @@
       border-radius: 4px;
     }
     textarea { min-height: 70px; resize: vertical; }
+    textarea:disabled { opacity: 0.5; }
+    label.check { font-weight: 600; }
+    label.check input { margin: 0 6px 0 0; vertical-align: -2px; }
     .hint { font-size: 12px; color: #777; margin-top: 4px; }
     .row { margin-top: 8px; }
     button {
@@ -51,8 +54,11 @@
   <h1>yt-dlp Downloader — Settings</h1>
 
   <label for="ytdlpPath">Path to yt-dlp</label>
-  <input type="text" id="ytdlpPath" placeholder="yt-dlp.exe or C:\tools\yt-dlp.exe" />
-  <div class="hint">Full path to <code>yt-dlp.exe</code>, or just <code>yt-dlp.exe</code> if it is on your PATH.</div>
+  <input type="text" id="ytdlpPath" />
+  <div class="hint">
+    Full path to the yt-dlp executable, or just its name if it is on your PATH.
+    On a Mac, Homebrew's folders (<code>/opt/homebrew/bin</code>, <code>/usr/local/bin</code>) are searched automatically.
+  </div>
   <div class="row">
     <button id="update" type="button">Update yt-dlp</button>
     <span id="updateStatus"></span>
@@ -60,11 +66,14 @@
   <div class="hint">Runs <code>yt-dlp --update</code> at the path above to upgrade to the latest version.</div>
 
   <label for="outputDir">Output directory</label>
-  <input type="text" id="outputDir" placeholder="%USERPROFILE%\Downloads" />
-  <div class="hint">Where downloaded files are saved. Windows environment variables are expanded by the host.</div>
+  <input type="text" id="outputDir" />
+  <div class="hint">
+    Where downloaded files are saved. Environment variables (<code>%VAR%</code> on Windows,
+    <code>$VAR</code> on Mac) and a leading <code>~</code> are expanded by the host.
+  </div>
 
   <label for="premiereTemplate">Premiere template (.prproj) <span style="font-weight:400;color:#888">— optional, experimental</span></label>
-  <input type="text" id="premiereTemplate" placeholder="C:\ytdlp-premiere-template\template.prproj" />
+  <input type="text" id="premiereTemplate" />
   <div class="hint">
     Enables the <strong>Premiere project</strong> checkbox in the popup. Point this at a
     template project containing placeholder media named
@@ -77,6 +86,12 @@
   <div class="hint">
     Placeholders: <code>{ytdlp}</code> <code>{cookies}</code> <code>{output}</code> <code>{url}</code>.
     The command is tokenized (shell-style) and run without a shell, so quote paths containing spaces.
+  </div>
+
+  <label class="check"><input type="checkbox" id="claudeEnabled" /> Enable Send to Claude features</label>
+  <div class="hint">
+    Shows the <strong>Download &rarr; Claude</strong> and <strong>Transcript &rarr; Claude</strong>
+    buttons in the popup. Turn off on a machine without the Claude Desktop app. Saved per computer.
   </div>
 
   <label for="claudePrompt">Claude launch prompt</label>
@@ -92,6 +107,7 @@
     <span id="saved"></span>
   </div>
 
+  <script src="settings.js"></script>
   <script src="options.js"></script>
 </body>
 </html>

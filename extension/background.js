@@ -133,7 +133,7 @@ function pump() {
   try {
     nativePort = chrome.runtime.connectNative(HOST_NAME);
   } catch (e) {
-    finishRunning({ ok: false, error: "Native host unavailable. Did you run install.ps1?" });
+    finishRunning({ ok: false, error: "Native host unavailable. Did you run install.ps1 (Windows) / install.sh (Mac)?" });
     return;
   }
 

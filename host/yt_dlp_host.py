@@ -17,7 +17,7 @@ Message types:
                    folder, title, note, stdout, stderr}.
   "pickFolder" {current}    -> {ok, path}
   "open"       {path}       -> opens the file with its default app -> {ok}
-  "reveal"     {path}       -> shows the file selected in Explorer -> {ok}
+  "reveal"     {path}       -> shows the file selected in Explorer/Finder -> {ok}
   "readText"   {path}       -> {ok, text} (capped) for the transcript drag
 """
 
@@ -49,6 +49,8 @@ MAX_OUTPUT = 12000
 MAX_TEXT = 200000  # cap for readText (transcript drag payload)
 
 CREATIONFLAGS = 0x08000000 if os.name == "nt" else 0  # CREATE_NO_WINDOW on Windows
+
+DEFAULT_YTDLP = "yt-dlp.exe" if os.name == "nt" else "yt-dlp"
 
 # A download can go quiet for minutes (metadata fetch, ffmpeg recode) with no
 # progress output. Chrome kills an idle MV3 service worker after ~30s, which
@@ -91,6 +93,11 @@ def send_message(obj):
         sys.stdout.buffer.write(struct.pack("<I", len(data)))
         sys.stdout.buffer.write(data)
         sys.stdout.buffer.flush()
+
+
+def expand_path(p):
+    """Expand env vars (%VAR% on Windows, $VAR elsewhere) and a leading ~."""
+    return os.path.expanduser(os.path.expandvars(p))
 
 
 def run_proc(argv):
@@ -162,11 +169,12 @@ def fmt_ts(seconds):
     return ("%d:%02d:%02d" % (h, m, sec)) if h else ("%d:%02d" % (m, sec))
 
 
-def resolve_workspace(output, video_id, workspace_stem):
+def resolve_workspace(output, video_id, workspace_stem, seed_claude=True):
     """Return (base_dir, folder_name) for a video's single workspace folder,
     reused across downloads/sessions keyed by video_id (so the full video, its
     clips, transcript, and metadata all land in one folder). The id -> folder
-    map lives in a hidden index in `output`."""
+    map lives in a hidden index in `output`. seed_claude=False (Claude features
+    switched off in Settings) skips the .claude/settings.json seeding."""
     index_path = os.path.join(output, WORKSPACE_INDEX)
     reg = {}
     try:
@@ -205,14 +213,15 @@ def resolve_workspace(output, video_id, workspace_stem):
     # open in "auto" permission mode. The claude:// deep link has no mode param,
     # so seed the workspace's project settings instead. Never overwrite one the
     # user has edited.
-    try:
-        settings_path = os.path.join(base, ".claude", "settings.json")
-        if not os.path.exists(settings_path):
-            os.makedirs(os.path.dirname(settings_path), exist_ok=True)
-            with open(settings_path, "w", encoding="utf-8") as f:
-                json.dump({"permissions": {"defaultMode": "auto"}}, f, indent=2)
-    except OSError:
-        pass
+    if seed_claude:
+        try:
+            settings_path = os.path.join(base, ".claude", "settings.json")
+            if not os.path.exists(settings_path):
+                os.makedirs(os.path.dirname(settings_path), exist_ok=True)
+                with open(settings_path, "w", encoding="utf-8") as f:
+                    json.dump({"permissions": {"defaultMode": "auto"}}, f, indent=2)
+        except OSError:
+            pass
 
     return base, folder
 
@@ -518,8 +527,8 @@ def write_transcript(base, stem, clip_start=None, clip_end=None):
 
 def handle_download(msg):
     template = msg.get("template") or '"{ytdlp}" -N 16 --recode-video mp4 --cookies "{cookies}" -P "{output}" -f "bv*[height>1080][ext=webm]+ba/bv*[vcodec^=avc1]+ba[acodec^=mp4a]/bv*[ext=mp4]+ba[ext=m4a]/b[ext=mp4]/b" "{url}"'
-    ytdlp = os.path.expandvars(msg.get("ytdlpPath") or "yt-dlp.exe")
-    output = os.path.expandvars(msg.get("outputDir") or os.path.expanduser("~"))
+    ytdlp = expand_path(msg.get("ytdlpPath") or DEFAULT_YTDLP)
+    output = expand_path(msg.get("outputDir") or "~")
     url = msg.get("url") or ""
     cookies_text = msg.get("cookiesText") or ""
     transcript = bool(msg.get("transcript"))
@@ -590,7 +599,9 @@ def handle_download(msg):
         if new_folder:
             video_id = (info.get("id") if info else None) or \
                 ("url-" + hashlib.md5(url.encode("utf-8")).hexdigest()[:10])
-            base, workspace_stem = resolve_workspace(output, video_id, workspace_stem)
+            base, workspace_stem = resolve_workspace(
+                output, video_id, workspace_stem,
+                seed_claude=bool(msg.get("claudeEnabled", True)))
         else:
             base = output
             os.makedirs(base, exist_ok=True)
@@ -694,7 +705,7 @@ def handle_download(msg):
 
         if new_folder and not no_video and msg.get("premiereProject") and msg.get("premiereTemplate") and video_path:
             notes.append(write_prproj(
-                base, file_stem, os.path.expandvars(msg.get("premiereTemplate")),
+                base, file_stem, expand_path(msg.get("premiereTemplate")),
                 video_path))
 
         send_message({
@@ -724,14 +735,47 @@ def handle_download(msg):
                     pass
 
 
+# macOS folder picker. tkinter is missing from Homebrew's Python and its dialog
+# opens behind Chrome, so use AppleScript's native one. The start folder is passed
+# as an argument (argv) rather than spliced into the script, so no escaping.
+MAC_PICK_FOLDER_SCRIPT = """
+on run argv
+  activate
+  if (count of argv) > 0 then
+    set f to choose folder with prompt "Download to" default location (POSIX file (item 1 of argv))
+  else
+    set f to choose folder with prompt "Download to"
+  end if
+  return POSIX path of f
+end run
+"""
+
+
+def pick_folder_mac(initial):
+    argv = ["osascript"]
+    for line in MAC_PICK_FOLDER_SCRIPT.strip().splitlines():
+        argv += ["-e", line]
+    if os.path.isdir(initial):
+        argv.append(initial)
+    proc = run_proc(argv)
+    if proc.returncode == 0:
+        path = proc.stdout.strip()
+        return {"ok": True, "path": path.rstrip("/") or path}
+    if "-128" in (proc.stderr or ""):  # "User canceled."
+        return {"ok": True, "path": ""}
+    return {"ok": False, "error": (proc.stderr or "osascript failed").strip()}
+
+
 def handle_pick_folder(msg):
     try:
+        initial = expand_path(msg.get("current") or "") or os.path.expanduser("~")
+        if sys.platform == "darwin":
+            return pick_folder_mac(initial)
         import tkinter
         from tkinter import filedialog
         root = tkinter.Tk()
         root.withdraw()
         root.attributes("-topmost", True)
-        initial = os.path.expandvars(msg.get("current") or "") or os.path.expanduser("~")
         path = filedialog.askdirectory(initialdir=initial, parent=root)
         root.destroy()
         return {"ok": True, "path": path or ""}
@@ -785,7 +829,7 @@ def handle_read_text(msg):
 
 def handle_update(msg):
     """Run `yt-dlp --update` to upgrade the binary in place."""
-    ytdlp = os.path.expandvars(msg.get("ytdlpPath") or "yt-dlp.exe")
+    ytdlp = expand_path(msg.get("ytdlpPath") or DEFAULT_YTDLP)
     try:
         proc = run_proc([ytdlp, "--update"])
         return {
@@ -821,7 +865,7 @@ def handle_launch_uri(msg):
 def handle_fetch_transcript(msg):
     """Fetch + clean the full transcript for a URL and return it as SRT text
     (for the in-popup viewer). Nothing is written to the download folder."""
-    ytdlp = os.path.expandvars(msg.get("ytdlpPath") or "yt-dlp.exe")
+    ytdlp = expand_path(msg.get("ytdlpPath") or DEFAULT_YTDLP)
     url = msg.get("url") or ""
     cookies_text = msg.get("cookiesText") or ""
     lang = msg.get("transcriptLang") or "en"

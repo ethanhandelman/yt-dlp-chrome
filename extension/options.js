@@ -1,28 +1,46 @@
-// options.js — load and persist settings in chrome.storage.sync.
-
-const DEFAULTS = {
-  ytdlpPath: "yt-dlp.exe",
-  outputDir: "%USERPROFILE%\\Downloads",
-  template: '"{ytdlp}" -N 16 --recode-video mp4 --cookies "{cookies}" -P "{output}" -f "bv*[height>1080][ext=webm]+ba/bv*[vcodec^=avc1]+ba[acodec^=mp4a]/bv*[ext=mp4]+ba[ext=m4a]/b[ext=mp4]/b" "{url}"',
-  premiereTemplate: "",
-  claudePrompt: "A video was just downloaded into this folder by the yt-dlp downloader. Read the .metadata.md and .srt files here, then follow the CLAUDE.md in the parent folder: decide whether this is a Mode A (clip discovery) or Mode B (hook + on-screen caption) job using its mode-selection rules, or ask me first if it is genuinely unclear. Then begin.",
-};
+// options.js — load and persist settings (settings.js decides where each lives).
 
 const fields = ["ytdlpPath", "outputDir", "template", "premiereTemplate", "claudePrompt"];
+const $claudeEnabled = document.getElementById("claudeEnabled");
+const $claudePrompt = document.getElementById("claudePrompt");
+
+const PLACEHOLDERS = {
+  win: {
+    ytdlpPath: "yt-dlp.exe or C:\\tools\\yt-dlp.exe",
+    outputDir: "%USERPROFILE%\\Downloads",
+    premiereTemplate: "C:\\ytdlp-premiere-template\\template.prproj",
+  },
+  mac: {
+    ytdlpPath: "yt-dlp or /opt/homebrew/bin/yt-dlp",
+    outputDir: "~/Downloads",
+    premiereTemplate: "~/ytdlp-premiere-template/template.prproj",
+  },
+};
+
+// The prompt only matters while the Claude features are on.
+function syncClaudeUi() {
+  $claudePrompt.disabled = !$claudeEnabled.checked;
+}
 
 async function load() {
-  const stored = await chrome.storage.sync.get(DEFAULTS);
+  const stored = await getSettings();
+  const ph = (await getOs()) === "win" ? PLACEHOLDERS.win : PLACEHOLDERS.mac;
   for (const id of fields) {
-    document.getElementById(id).value = stored[id] ?? DEFAULTS[id];
+    const el = document.getElementById(id);
+    el.value = stored[id];
+    if (ph[id]) el.placeholder = ph[id];
   }
+  $claudeEnabled.checked = !!stored.claudeEnabled;
+  syncClaudeUi();
 }
 
 async function save() {
-  const values = {};
+  const defaults = await settingsDefaults();
+  const values = { claudeEnabled: $claudeEnabled.checked };
   for (const id of fields) {
-    values[id] = document.getElementById(id).value.trim() || DEFAULTS[id];
+    values[id] = document.getElementById(id).value.trim() || defaults[id];
   }
-  await chrome.storage.sync.set(values);
+  await saveSettings(values);
   const saved = document.getElementById("saved");
   saved.textContent = "Saved ✓";
   setTimeout(() => (saved.textContent = ""), 1500);
@@ -31,7 +49,7 @@ async function save() {
 async function update() {
   const btn = document.getElementById("update");
   const status = document.getElementById("updateStatus");
-  const ytdlpPath = document.getElementById("ytdlpPath").value.trim() || DEFAULTS.ytdlpPath;
+  const ytdlpPath = document.getElementById("ytdlpPath").value.trim() || (await settingsDefaults()).ytdlpPath;
   btn.disabled = true;
   status.className = "run";
   status.textContent = "Updating…";
@@ -60,5 +78,6 @@ async function update() {
 }
 
 document.getElementById("save").addEventListener("click", save);
+$claudeEnabled.addEventListener("change", syncClaudeUi);
 document.getElementById("update").addEventListener("click", update);
 load();

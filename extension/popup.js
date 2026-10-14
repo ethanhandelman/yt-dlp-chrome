@@ -2,14 +2,7 @@
 // and starts a download over a streaming port to the service worker. Also shows
 // a progress bar and a recent-downloads list with open/reveal/drag actions.
 // Per-download options (path, transcript, new folder) persist in storage.local.
-
-const OPTION_DEFAULTS = {
-  ytdlpPath: "yt-dlp.exe",
-  outputDir: "%USERPROFILE%\\Downloads",
-  template: '"{ytdlp}" -N 16 --recode-video mp4 --cookies "{cookies}" -P "{output}" -f "bv*[height>1080][ext=webm]+ba/bv*[vcodec^=avc1]+ba[acodec^=mp4a]/bv*[ext=mp4]+ba[ext=m4a]/b[ext=mp4]/b" "{url}"',
-  premiereTemplate: "",
-  claudePrompt: "A video was just downloaded into this folder by the yt-dlp downloader. Read the .metadata.md and .srt files here, then follow the CLAUDE.md in the parent folder: decide whether this is a Mode A (clip discovery) or Mode B (hook + on-screen caption) job using its mode-selection rules, or ask me first if it is genuinely unclear. Then begin.",
-};
+// Settings-page options come from getSettings() in settings.js.
 
 const STATE_DEFAULTS = {
   downloadPath: "",
@@ -146,10 +139,6 @@ function toNetscape(cookies) {
 async function getActiveTab() {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
   return tab;
-}
-async function getOptions() {
-  const stored = await chrome.storage.sync.get(OPTION_DEFAULTS);
-  return { ...OPTION_DEFAULTS, ...stored };
 }
 function currentState() {
   return {
@@ -513,8 +502,11 @@ let currentTab = null;
 
 (async function init() {
   const state = await chrome.storage.local.get(STATE_DEFAULTS);
-  const opts = await getOptions();
+  const opts = await getSettings();
   $path.value = state.downloadPath || opts.outputDir;
+  $path.placeholder = opts.outputDir;  // what a blank field falls back to
+  // Claude features can be switched off in Settings (e.g. no Claude Desktop here).
+  $btnClaude.hidden = $transcriptClaude.hidden = !opts.claudeEnabled;
   $transcript.checked = !!state.transcript;
   $newFolder.checked = !!state.newFolder;
   // The Premiere option only works when a template is configured in Settings.
@@ -589,7 +581,7 @@ async function doDownload(mode = {}) {
     await saveState();
     const cookies = await chrome.cookies.getAll({ url: currentTab.url });
     const cookiesText = toNetscape(cookies);
-    const opts = await getOptions();
+    const opts = await getSettings();
     const state = currentState();
     setStatus(noVideo ? "Preparing transcript → Claude…" : (claude ? `Queued → Claude (${cookies.length} cookies).` : `Queued (${cookies.length} cookies).`), "run");
 
@@ -607,6 +599,7 @@ async function doDownload(mode = {}) {
       transcriptLang: "en",
       premiereProject: state.premiere,
       premiereTemplate: opts.premiereTemplate || "",
+      claudeEnabled: !!opts.claudeEnabled,  // host seeds .claude/ only when on
     };
     if (noVideo) payload.noVideo = true;
     // A trimmed section only applies to a real video download.
@@ -705,7 +698,7 @@ async function openTranscript() {
     let srt = (await chrome.storage.session.get(cacheKey))[cacheKey];
     if (!srt) {
       const cookies = await chrome.cookies.getAll({ url: currentTab.url });
-      const opts = await getOptions();
+      const opts = await getSettings();
       // The host retries once with a 60s pause when YouTube rate-limits the
       // caption request; a one-shot native call can't stream that, so explain
       // the wait if the fetch is taking longer than a normal one.
